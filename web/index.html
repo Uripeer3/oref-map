@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>מפת העורף - מפת התרעות פיקוד העורף</title>
+<meta name="description" content="מפת העורף - מפת התרעות פיקוד העורף בזמן אמת">
+<meta property="og:title" content="מפת העורף">
+<meta property="og:description" content="מפת התרעות פיקוד העורף בזמן אמת">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="he_IL">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="מפת העורף">
+<meta name="twitter:description" content="מפת התרעות פיקוד העורף בזמן אמת">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-delaunay@6/dist/d3-delaunay.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; font-family: Arial, sans-serif; }
+#map { width: 100%; height: 100%; }
+.leaflet-interactive:hover { fill-opacity: 0.7 !important; stroke-opacity: 1 !important; }
+
+#legend {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: rgba(255,255,255,0.92);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.8;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  z-index: 1000;
+  direction: rtl;
+  max-width: calc(100vw - 32px);
+}
+#legend .row { display: flex; align-items: center; gap: 8px; }
+#legend .dot {
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+}
+.dot-red    { background: #ff0000; }
+.dot-orange { background: #ff8800; }
+.dot-yellow { background: #ffcc00; }
+.dot-green  { background: #00cc00; }
+
+#status {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  background: rgba(255,255,255,0.92);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  z-index: 1000;
+  direction: ltr;
+}
+#status .indicator {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-left: 6px; vertical-align: middle;
+}
+.indicator-ok   { background: #00cc00; }
+.indicator-err  { background: #ff0000; }
+
+#page-title {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255,255,255,0.92);
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 16px;
+  font-weight: bold;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  z-index: 1000;
+  direction: rtl;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.leaflet-popup-close-button {
+  right: auto !important;
+  left: 5px !important;
+}
+
+#about-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 2000;
+  justify-content: center;
+  align-items: center;
+}
+#about-backdrop.visible { display: flex; }
+
+#about-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 420px;
+  width: calc(100vw - 32px);
+  direction: rtl;
+  position: relative;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  font-size: 15px;
+  line-height: 1.7;
+}
+#about-modal h2 { margin: 0 0 12px; font-size: 20px; }
+#about-modal p { margin: 0 0 10px; color: #444; }
+#about-modal a { color: #0066cc; }
+
+#about-close {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: none;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: #888;
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  text-align: center;
+  padding: 0;
+  border-radius: 4px;
+}
+#about-close:hover { background: #eee; color: #333; }
+
+#sound-btn {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  width: 40px;
+  height: 40px;
+  background: rgba(255,255,255,0.92);
+  border: none;
+  border-radius: 8px;
+  font-size: 22px;
+  line-height: 40px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  z-index: 1000;
+  padding: 0;
+}
+#sound-btn:hover { background: #f0f0f0; }
+
+#timeline-btn {
+  display: none;
+  position: fixed;
+  bottom: 24px;
+  left: 72px;
+  width: 40px;
+  height: 40px;
+  background: rgba(255,255,255,0.92);
+  border: none;
+  border-radius: 8px;
+  font-size: 20px;
+  line-height: 40px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  z-index: 1000;
+  padding: 0;
+}
+#timeline-btn.has-data { display: block; }
+#timeline-btn:hover { background: #f0f0f0; }
+#timeline-btn.active { background: #e0e0e0; }
+
+#timeline-bar {
+  display: none;
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(calc(100vw - 48px), 600px);
+  background: rgba(255,255,255,0.92);
+  border-radius: 8px;
+  padding: 8px 14px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  z-index: 1000;
+  direction: ltr;
+  align-items: center;
+  gap: 10px;
+}
+#timeline-bar.open { display: flex; }
+#timeline-play {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+#timeline-play:hover { opacity: 0.7; }
+#timeline-slider {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+#timeline-label {
+  font-size: 13px;
+  font-weight: bold;
+  white-space: nowrap;
+  min-width: 56px;
+  text-align: center;
+  flex-shrink: 0;
+}
+#timeline-label.live-label { color: #00cc00; }
+
+@media (max-width: 480px) {
+  #legend {
+    bottom: 12px;
+    right: 12px;
+    padding: 8px 12px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  #legend .dot { width: 12px; height: 12px; }
+  #status {
+    top: 8px;
+    right: 8px;
+    padding: 5px 10px;
+    font-size: 13px;
+  }
+  #sound-btn {
+    bottom: 12px;
+    left: 12px;
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+    line-height: 36px;
+  }
+  #timeline-btn {
+    bottom: 12px;
+    left: 56px;
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+    line-height: 36px;
+  }
+  #timeline-bar {
+    bottom: 60px;
+    padding: 6px 10px;
+  }
+}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="page-title">מפת העורף</div>
+
+<div id="legend">
+  <div class="row"><div class="dot dot-red"></div><span>ירי רקטות וטילים</span></div>
+  <div class="row"><div class="dot dot-orange"></div><span>חדירת כלי טיס עוין</span></div>
+  <div class="row"><div class="dot dot-yellow"></div><span>התרעה מוקדמת על טילים</span></div>
+  <div class="row"><div class="dot dot-green"></div><span>אירוע שהסתיים</span></div>
+</div>
+
+<div id="status">
+  <span class="indicator indicator-ok" id="statusDot"></span>
+  <span id="statusText">Connecting...</span>
+</div>
+
+<div id="about-backdrop">
+  <div id="about-modal">
+    <button id="about-close">&times;</button>
+    <h2>אודות מפת העורף</h2>
+    <p>מפה המציגה בזמן אמת התרעות פיקוד העורף על גבי מפת ישראל.</p>
+    <p>מקור הנתונים: ממשק ה-API הציבורי של פיקוד העורף.</p>
+    <p>מפה זו אינה רשמית ואינה מופעלת על ידי פיקוד העורף. אין להסתמך עליה כמקור יחיד למידע ביטחוני. לקבלת הנחיות רשמיות, יש לפנות לאתר <a href="https://www.oref.org.il/" target="_blank" rel="noopener">פיקוד העורף</a>.</p>
+  </div>
+</div>
+
+<button id="sound-btn" title="השמעת צלילים">🔇</button>
+<button id="timeline-btn" title="ציר זמן">&#128339;</button>
+
+<div id="timeline-bar">
+  <button id="timeline-play" title="נגן ציר זמן">&#9654;</button>
+  <input type="range" id="timeline-slider" min="0" max="1000" value="1000" step="1">
+  <span id="timeline-label">LIVE</span>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // --- Config ---
+  // Set PROXY_BASE to the Cloudflare Worker URL for production, e.g.:
+  //   var PROXY_BASE = 'https://oref-proxy.YOUR_ACCOUNT.workers.dev';
+  var PROXY_BASE = '';
+  var LIVE_POLL_MS = 1000;
+  var HISTORY_POLL_MS = 10000;
+  var GREEN_FADE_MS = 60000; // 1 minute
+  var FADE_TICK_MS = 1000;
+
+  // --- Map setup ---
+  var map = L.map('map').setView([31.6, 34.8], 8);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 18
+  }).addTo(map);
+
+  // --- State ---
+  var citiesGeo = null;          // {name: [lat, lng]}
+  var locationStates = {};       // {name: {state, since, marker}}
+  var locationHistory = {};      // {name: [{title, alertDate, state}, ...]}
+  var lastHistoryDate = null;    // track newest history entry
+  var pollErrors = 0;
+  var initialized = false;
+  var soundMuted = true;
+  var audioCtx = null;
+  var lastSoundTime = 0;
+
+  try { soundMuted = localStorage.getItem('oref-sound-muted') !== 'false'; } catch(e) {}
+
+  // --- Timeline state ---
+  var extendedHistory = [];     // sorted ascending by alertDate ms
+  var extendedRids = new Set(); // dedup by rid
+  var timelineMin = 0;
+  var timelineMax = 0;
+  var isLiveMode = true;
+  var isPlaying = false;
+  var playRAF = null;
+  var currentViewTime = 0;
+  var liveLocationStates = null; // shadow copy of live state
+
+  // --- Voronoi state ---
+  var cityNames = [];       // cityNames[i] = location name
+  var cityIndex = {};       // cityIndex[name] = i
+  var cityPolygons = [];    // cityPolygons[i] = L.polygon
+
+  // --- Colors ---
+  var COLORS = { red: '#ff0000', orange: '#ff8800', yellow: '#ffcc00', green: '#00cc00' };
+
+  // --- Sound ---
+  function getAudioContext() {
+    if (!audioCtx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function playDangerSound() {
+    var ctx = getAudioContext();
+    if (!ctx) return;
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(440, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  }
+
+  function playAllClearSound() {
+    var ctx = getAudioContext();
+    if (!ctx) return;
+    // First tone: C5 (523 Hz)
+    var osc1 = ctx.createOscillator();
+    var gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.value = 523;
+    gain1.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain1.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(ctx.currentTime);
+    osc1.stop(ctx.currentTime + 0.2);
+    // Second tone: E5 (659 Hz)
+    var osc2 = ctx.createOscillator();
+    var gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.value = 659;
+    gain2.gain.setValueAtTime(0.25, ctx.currentTime + 0.2);
+    gain2.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.45);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(ctx.currentTime + 0.2);
+    osc2.stop(ctx.currentTime + 0.45);
+  }
+
+  function playSoundForState(state) {
+    if (!initialized || soundMuted || !isLiveMode) return;
+    var now = Date.now();
+    if (now - lastSoundTime < 500) return;
+    lastSoundTime = now;
+    if (state === 'green') {
+      playAllClearSound();
+    } else {
+      playDangerSound();
+    }
+  }
+
+  // --- Polygon clipping (uses polygon-clipping library) ---
+  // polygon-clipping uses GeoJSON convention: [lng, lat] rings.
+  // Israel + territories outline — detailed concave border.
+  var ISRAEL_CLIP_RING = [
+    [34.92, 29.49],   // Eilat
+    [34.22, 31.21],   // Egypt-Gaza border
+    [34.33, 31.37],   // Gaza SW coast
+    [34.43, 31.53],   // Gaza coast
+    [34.54, 31.68],   // Ashkelon coast
+    [34.63, 31.82],   // Ashdod coast
+    [34.73, 31.96],   // Rishon coast
+    [34.76, 32.09],   // Tel Aviv coast
+    [34.79, 32.20],   // Herzliya coast
+    [34.84, 32.34],   // Netanya coast
+    [34.87, 32.50],   // Caesarea coast
+    [34.93, 32.70],   // Atlit coast
+    [34.96, 32.83],   // Haifa coast
+    [35.06, 32.95],   // Akko coast
+    [35.10, 33.10],   // Rosh HaNikra
+    [35.60, 33.34],   // Lebanon border
+    [35.92, 33.34],   // Golan NE
+    [35.92, 33.15],   // Golan E
+    [35.88, 32.92],   // Golan SE
+    [35.82, 32.76],   // SE of Sea of Galilee
+    [35.72, 32.60],   // S of Sea of Galilee
+    [35.62, 32.48],   // Beit She'an area
+    [35.58, 32.35],   // N Jordan Valley
+    [35.57, 32.20],   // Jordan Valley
+    [35.56, 32.05],   // Jordan Valley mid
+    [35.55, 31.90],   // Jericho area
+    [35.54, 31.75],   // N Dead Sea
+    [35.50, 31.55],   // Dead Sea N
+    [35.48, 31.35],   // Dead Sea mid
+    [35.44, 31.15],   // Dead Sea S
+    [35.40, 31.00],   // S Dead Sea
+    [35.35, 30.80],   // N Arava
+    [35.30, 30.55],   // Arava mid
+    [35.22, 30.30],   // Arava
+    [35.14, 30.05],   // S Arava
+    [34.98, 29.55],   // Near Eilat
+    [34.92, 29.49]    // Close polygon
+  ];
+
+  function clipToIsrael(latlngs) {
+    // Convert [lat, lng] ring to [lng, lat] for polygon-clipping
+    var subjectRing = [];
+    for (var i = 0; i < latlngs.length; i++) {
+      subjectRing.push([latlngs[i][1], latlngs[i][0]]);
+    }
+    var result = polygonClipping.intersection(
+      [subjectRing], [ISRAEL_CLIP_RING]
+    );
+    if (!result || result.length === 0) return [];
+    // Convert first result polygon back to [lat, lng]
+    var ring = result[0][0];
+    var out = [];
+    for (var i = 0; i < ring.length; i++) {
+      out.push([ring[i][1], ring[i][0]]);
+    }
+    return out;
+  }
+
+  // --- Voronoi polygon builder ---
+  function buildVoronoiPolygons() {
+    var COS_LAT = Math.cos(32.2 * Math.PI / 180); // ~0.846
+    var names = Object.keys(citiesGeo);
+    var points = [];
+    cityNames = [];
+    cityIndex = {};
+    cityPolygons = [];
+
+    for (var i = 0; i < names.length; i++) {
+      var name = names[i];
+      var geo = citiesGeo[name];
+      cityNames.push(name);
+      cityIndex[name] = i;
+      points.push([geo[1] * COS_LAT, geo[0]]); // [scaledLng, lat]
+    }
+
+    // Bounding box: generous west (clipping handles coast), tight elsewhere
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var i = 0; i < points.length; i++) {
+      if (points[i][0] < minX) minX = points[i][0];
+      if (points[i][1] < minY) minY = points[i][1];
+      if (points[i][0] > maxX) maxX = points[i][0];
+      if (points[i][1] > maxY) maxY = points[i][1];
+    }
+    var bounds = [minX - 0.5, minY - 0.01, maxX + 0.01, maxY + 0.01];
+
+    var delaunay = d3.Delaunay.from(points);
+    var voronoi = delaunay.voronoi(bounds);
+
+    for (var i = 0; i < cityNames.length; i++) {
+      var cell = voronoi.cellPolygon(i);
+      if (!cell) {
+        cityPolygons.push(null);
+        continue;
+      }
+      // Convert from [scaledLng, lat] to [lat, lng]
+      var latlngs = [];
+      for (var j = 0; j < cell.length; j++) {
+        latlngs.push([cell[j][1], cell[j][0] / COS_LAT]);
+      }
+      // Clip to Israel outline
+      latlngs = clipToIsrael(latlngs);
+      if (latlngs.length < 3) {
+        cityPolygons.push(null);
+        continue;
+      }
+      var polygon = L.polygon(latlngs, {
+        fillOpacity: 0,
+        opacity: 0,
+        weight: 1,
+        interactive: false
+      }).addTo(map);
+      polygon.bindTooltip(cityNames[i], { direction: 'top' });
+      (function(name, poly) {
+        poly.on('click', function() { showPopup(name, poly); });
+      })(cityNames[i], polygon);
+      cityPolygons.push(polygon);
+    }
+
+    // ?debug: show clip polygon + all cell outlines
+    if (location.search.indexOf('debug') !== -1) {
+      var borderLatLngs = ISRAEL_CLIP_RING.map(function(p) { return [p[1], p[0]]; });
+      L.polygon(borderLatLngs, {
+        color: '#0000ff', fillOpacity: 0, weight: 2, dashArray: '6 4',
+        interactive: false
+      }).addTo(map);
+      // Force all cell outlines visible via CSS (survives setStyle from alerts)
+      var debugStyle = document.createElement('style');
+      debugStyle.textContent = '.leaflet-overlay-pane path { stroke: #555 !important; stroke-opacity: 1 !important; stroke-width: 1 !important; }';
+      document.head.appendChild(debugStyle);
+      for (var i = 0; i < cityPolygons.length; i++) {
+        if (cityPolygons[i]) {
+          cityPolygons[i].setStyle({ fillOpacity: 0.05 });
+          cityPolygons[i].options.interactive = true;
+          var el = cityPolygons[i].getElement();
+          if (el) el.classList.add('leaflet-interactive');
+        }
+      }
+    }
+
+    console.log('Built Voronoi polygons for', cityNames.length, 'cities');
+  }
+
+  // --- Title classification ---
+  function classifyTitle(title) {
+    title = title.replace(/\s+/g, ' ').trim();
+
+    // Green — all-clear / event over (fades out)
+    if (title.includes('האירוע הסתיים') ||
+        title.includes('ניתן לצאת') ||
+        title.includes('החשש הוסר')) {
+      return 'green';
+    }
+
+    // Yellow — early warning (Iran launch; sirens expected in ~10 min)
+    if (title === 'בדקות הקרובות צפויות להתקבל התרעות באזורך') {
+      return 'yellow';
+    }
+
+    // Orange — drone infiltration
+    if (title === 'חדירת כלי טיס עוין') {
+      return 'orange';
+    }
+
+    // Red — active danger (missiles / non-conventional / terrorists)
+    if (title === 'ירי רקטות וטילים' ||
+        title === 'נשק לא קונבנציונלי' ||
+        title === 'חדירת מחבלים') {
+      return 'red';
+    }
+
+    console.warn('Unknown alert title:', title);
+    return 'red'; // default to danger for unknown
+  }
+
+  // --- Marker management ---
+  function setLocationState(name, state, since) {
+    var geo = citiesGeo[name];
+    if (!geo) return;
+
+    var existing = locationStates[name];
+
+    // Priority: red > orange > yellow. Green always overrides (all-clear).
+    var PRIORITY = { red: 3, orange: 2, yellow: 1, green: 0 };
+    if (existing) {
+      if (state !== 'green') {
+        if (existing.state === state) return;
+        if ((PRIORITY[existing.state] || 0) > (PRIORITY[state] || 0)) return;
+      } else if (existing.state === 'green') {
+        return; // already green — don't reset the fade timer
+      }
+    }
+
+    var idx = cityIndex[name];
+    var polygon = idx != null ? cityPolygons[idx] : null;
+    if (!polygon) return;
+
+    var opacity = state === 'green' ? 0.6 : 0.5;
+    polygon.setStyle({
+      color: COLORS[state],
+      fillColor: COLORS[state],
+      fillOpacity: opacity,
+      opacity: opacity + 0.2,
+      weight: 1
+    });
+    if (!polygon.options.interactive) {
+      polygon.options.interactive = true;
+      var el = polygon.getElement();
+      if (el) el.classList.add('leaflet-interactive');
+    }
+
+    locationStates[name] = {
+      state: state,
+      since: since || Date.now(),
+      marker: polygon
+    };
+
+    playSoundForState(state);
+  }
+
+  function removeLocation(name) {
+    var entry = locationStates[name];
+    if (entry && entry.marker) {
+      entry.marker.setStyle({ fillOpacity: 0, opacity: 0 });
+      entry.marker.options.interactive = false;
+      var el = entry.marker.getElement();
+      if (el) el.classList.remove('leaflet-interactive');
+      entry.marker.closePopup();
+    }
+    delete locationStates[name];
+  }
+
+  // --- Alert history per location ---
+  var openPopupName = null;
+  var openPopupMarker = null;
+
+  function recordHistory(name, title, alertDate, state) {
+    if (!locationHistory[name]) locationHistory[name] = [];
+    var arr = locationHistory[name];
+    // Avoid consecutive duplicates with the same title
+    var last = arr[arr.length - 1];
+    if (last && last.title === title) return;
+    arr.push({ title: title, alertDate: alertDate, state: state });
+    // Refresh popup if it's open for this location
+    if (openPopupName === name && openPopupMarker) {
+      openPopupMarker.getPopup().setContent(buildPopupHtml(name));
+    }
+  }
+
+  var STATE_LABELS = { red: 'ירי רקטות', orange: 'כטב"מ', yellow: 'התרעה', green: 'הסתיים' };
+
+  function buildPopupHtml(name) {
+    var entries = (locationHistory[name] || []).slice()
+      .sort(function(a, b) { return (b.alertDate || '').localeCompare(a.alertDate || ''); });
+    var rows = entries.map(function(e, i) {
+      var color = COLORS[e.state] || '#888';
+      var time = e.alertDate ? e.alertDate.slice(11, 16) : '';
+      var border = i < entries.length - 1 ? 'border-bottom:1px solid #eee;' : '';
+      return '<div style="padding:4px 0;' + border + 'display:flex;align-items:baseline;gap:8px">' +
+        (time ? '<span style="color:#aaa;font-size:12px;white-space:nowrap">' + time + '</span>' : '') +
+        '<span style="color:#444;font-size:13px;flex:1;text-align:right">' + e.title + '</span>' +
+        '<span style="color:' + color + ';font-weight:bold;white-space:nowrap">' + (STATE_LABELS[e.state] || e.state) + '</span>' +
+      '</div>';
+    }).join('');
+    return '<div style="direction:ltr;width:min(360px,85vw)"><b style="float:right">' + name + '</b><div style="clear:both"></div>' +
+      (rows ? '<div style="margin-top:6px">' + rows + '</div>' : '<p style="color:#888;margin-top:6px">אין היסטוריה</p>') +
+      '</div>';
+  }
+
+  function showPopup(name, marker) {
+    openPopupName = name;
+    openPopupMarker = marker;
+    marker.bindPopup(buildPopupHtml(name), { maxWidth: 350 })
+      .openPopup()
+      .on('popupclose', function() { openPopupName = null; openPopupMarker = null; });
+  }
+
+  // --- Process alerts ---
+  function processLiveAlert(alert) {
+    if (!alert || !alert.data || !alert.title) return;
+    var title = alert.title.replace(/\s+/g, ' ').trim();
+    var state = classifyTitle(title);
+    var locations = alert.data;
+    if (!Array.isArray(locations)) return;
+    var now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    for (var i = 0; i < locations.length; i++) {
+      var loc = locations[i];
+      recordHistory(loc, title, now, state);
+      if (isLiveMode) {
+        setLocationState(loc, state);
+      } else if (liveLocationStates) {
+        updateShadowState(loc, state);
+      }
+    }
+  }
+
+  function processHistoryEntry(entry) {
+    if (!entry || !entry.data || !entry.title) return;
+    var title = entry.title.replace(/\s+/g, ' ').trim();
+    var state = classifyTitle(title);
+    // History `data` is a string (single location)
+    var location = (typeof entry.data === 'string' ? entry.data : String(entry.data)).trim();
+    var since = parseAlertDate(entry.alertDate) || Date.now();
+    recordHistory(location, title, entry.alertDate || '', state);
+
+    // Also feed into extendedHistory for timeline
+    var key = location + '|' + (entry.alertDate || '');
+    if (!extendedRids.has(key) && since) {
+      extendedRids.add(key);
+      extendedHistory.push({ location: location, title: title, alertDate: since, state: state });
+      if (!timelineMin || since < timelineMin) timelineMin = since;
+      if (since > timelineMax) timelineMax = since;
+    }
+
+    if (isLiveMode) {
+      setLocationState(location, state, since);
+    } else if (liveLocationStates) {
+      updateShadowState(location, state, since);
+    }
+  }
+
+  // --- Green fade-out ---
+  function fadeGreenMarkers() {
+    if (!isLiveMode) return;
+    var now = Date.now();
+    var toRemove = [];
+    for (var name in locationStates) {
+      var entry = locationStates[name];
+      if (entry.state !== 'green') continue;
+      var elapsed = now - entry.since;
+      if (elapsed >= GREEN_FADE_MS) {
+        toRemove.push(name);
+      } else {
+        var opacity = 0.6 * (1 - elapsed / GREEN_FADE_MS);
+        entry.marker.setStyle({ fillOpacity: opacity, opacity: opacity + 0.2 });
+      }
+    }
+    for (var i = 0; i < toRemove.length; i++) {
+      removeLocation(toRemove[i]);
+    }
+  }
+
+  // --- Status indicator ---
+  function setStatus(ok, text) {
+    var dot = document.getElementById('statusDot');
+    var txt = document.getElementById('statusText');
+    dot.className = 'indicator ' + (ok ? 'indicator-ok' : 'indicator-err');
+    txt.textContent = text;
+  }
+
+  // --- Fetching ---
+  function stripBom(text) {
+    return text.replace(/^\ufeff/, '');
+  }
+
+  function fetchLiveAlerts() {
+    fetch(PROXY_BASE + '/api/alerts')
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.text();
+      })
+      .then(function(text) {
+        text = stripBom(text).trim();
+        pollErrors = 0;
+        if (isLiveMode) setStatus(true, 'Live');
+        if (!text) return; // no active alert
+        var alert = JSON.parse(text);
+        processLiveAlert(alert);
+      })
+      .catch(function(err) {
+        pollErrors++;
+        if (pollErrors > 3) {
+          setStatus(false, 'Error');
+        }
+        console.error('Live poll error:', err);
+      });
+  }
+
+  function fetchHistory(onDone) {
+    fetch(PROXY_BASE + '/api/history')
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.text();
+      })
+      .then(function(text) {
+        text = stripBom(text).trim();
+        if (!text) { if (onDone) onDone(); return; }
+        var entries = JSON.parse(text);
+        if (!Array.isArray(entries)) { if (onDone) onDone(); return; }
+
+        // Sort by alertDate ascending
+        entries.sort(function(a, b) {
+          return (a.alertDate || '').localeCompare(b.alertDate || '');
+        });
+
+        var newEntries = 0;
+        for (var i = 0; i < entries.length; i++) {
+          var entry = entries[i];
+          var alertDate = entry.alertDate || '';
+
+          // On subsequent polls, only process new entries
+          if (lastHistoryDate && alertDate <= lastHistoryDate) continue;
+
+          processHistoryEntry(entry);
+          newEntries++;
+        }
+
+        if (entries.length > 0) {
+          lastHistoryDate = entries[entries.length - 1].alertDate || lastHistoryDate;
+        }
+
+        if (newEntries > 0) {
+          console.log('History: processed', newEntries, 'new entries');
+        }
+
+        if (onDone) onDone();
+      })
+      .catch(function(err) {
+        pollErrors++;
+        if (pollErrors > 3) {
+          setStatus(false, 'Error');
+        }
+        console.error('History fetch error:', err);
+        if (onDone) onDone();
+      });
+  }
+
+  function parseAlertDate(dateStr) {
+    // Format: "2026-03-03 12:34:56"
+    if (!dateStr) return null;
+    var d = new Date(dateStr.replace(' ', 'T'));
+    return isNaN(d.getTime()) ? null : d.getTime();
+  }
+
+  // --- Extended history (timeline) ---
+  function fetchExtendedHistory(onDone) {
+    fetch(PROXY_BASE + '/api/alarms-history')
+      .then(function(resp) {
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp.json();
+      })
+      .then(function(entries) {
+        if (!Array.isArray(entries)) { if (onDone) onDone(); return; }
+        for (var i = 0; i < entries.length; i++) {
+          var e = entries[i];
+          if (!e.data || !e.category_desc) continue;
+          var rid = String(e.rid || '');
+          if (rid && extendedRids.has(rid)) continue;
+          var title = (e.category_desc || '').replace(/\s+/g, ' ').trim();
+          var state = classifyTitle(title);
+          var location = (typeof e.data === 'string' ? e.data : String(e.data)).trim();
+          var ts = parseAlertDate(e.alertDate);
+          if (!ts) continue;
+          if (rid) extendedRids.add(rid);
+          extendedHistory.push({ location: location, title: title, alertDate: ts, state: state });
+        }
+        // Sort ascending by time
+        extendedHistory.sort(function(a, b) { return a.alertDate - b.alertDate; });
+        if (extendedHistory.length > 0) {
+          timelineMin = extendedHistory[0].alertDate;
+          timelineMax = extendedHistory[extendedHistory.length - 1].alertDate;
+        }
+        console.log('Extended history:', extendedHistory.length, 'entries');
+        if (onDone) onDone();
+      })
+      .catch(function(err) {
+        console.error('Extended history fetch error:', err);
+        if (onDone) onDone();
+      });
+  }
+
+  function reconstructStateAt(targetTime) {
+    // Clear all polygons
+    for (var name in locationStates) {
+      var entry = locationStates[name];
+      if (entry && entry.marker) {
+        entry.marker.setStyle({ fillOpacity: 0, opacity: 0 });
+        entry.marker.options.interactive = false;
+        var el = entry.marker.getElement();
+        if (el) el.classList.remove('leaflet-interactive');
+        entry.marker.closePopup();
+      }
+    }
+    locationStates = {};
+
+    // Replay history up to targetTime
+    var accumulated = {}; // {location: {state, title}}
+    var PRIORITY = { red: 3, orange: 2, yellow: 1, green: 0 };
+    for (var i = 0; i < extendedHistory.length; i++) {
+      var e = extendedHistory[i];
+      if (e.alertDate > targetTime) break;
+      var existing = accumulated[e.location];
+      if (existing) {
+        if (e.state === 'green') {
+          accumulated[e.location] = { state: 'green' };
+        } else if ((PRIORITY[e.state] || 0) >= (PRIORITY[existing.state] || 0)) {
+          accumulated[e.location] = { state: e.state };
+        }
+      } else {
+        accumulated[e.location] = { state: e.state };
+      }
+    }
+
+    // Apply accumulated state
+    for (var loc in accumulated) {
+      var s = accumulated[loc].state;
+      var idx = cityIndex[loc];
+      var polygon = idx != null ? cityPolygons[idx] : null;
+      if (!polygon) continue;
+      var opacity = 0.5;
+      polygon.setStyle({
+        color: COLORS[s],
+        fillColor: COLORS[s],
+        fillOpacity: opacity,
+        opacity: opacity + 0.2,
+        weight: 1
+      });
+      if (!polygon.options.interactive) {
+        polygon.options.interactive = true;
+        var el = polygon.getElement();
+        if (el) el.classList.add('leaflet-interactive');
+      }
+      locationStates[loc] = { state: s, since: Date.now(), marker: polygon };
+    }
+  }
+
+  function saveLiveState() {
+    if (liveLocationStates) return; // already saved
+    liveLocationStates = {};
+    for (var name in locationStates) {
+      var entry = locationStates[name];
+      liveLocationStates[name] = { state: entry.state, since: entry.since };
+    }
+  }
+
+  function restoreLiveState() {
+    // Clear all polygons
+    var names = Object.keys(locationStates);
+    for (var i = 0; i < names.length; i++) {
+      removeLocation(names[i]);
+    }
+    // Re-apply saved live state
+    if (liveLocationStates) {
+      for (var name in liveLocationStates) {
+        var s = liveLocationStates[name];
+        setLocationState(name, s.state, s.since);
+      }
+    }
+    liveLocationStates = null;
+  }
+
+  function updateShadowState(name, state, since) {
+    if (!liveLocationStates) return;
+    var PRIORITY = { red: 3, orange: 2, yellow: 1, green: 0 };
+    var existing = liveLocationStates[name];
+    if (existing) {
+      if (state === 'green') {
+        liveLocationStates[name] = { state: 'green', since: since || Date.now() };
+      } else if (existing.state === state) {
+        return;
+      } else if ((PRIORITY[existing.state] || 0) > (PRIORITY[state] || 0)) {
+        return;
+      } else {
+        liveLocationStates[name] = { state: state, since: since || Date.now() };
+      }
+    } else {
+      liveLocationStates[name] = { state: state, since: since || Date.now() };
+    }
+  }
+
+  function initTimeline() {
+    var bar = document.getElementById('timeline-bar');
+    var slider = document.getElementById('timeline-slider');
+    var label = document.getElementById('timeline-label');
+    var playBtn = document.getElementById('timeline-play');
+    var toggleBtn = document.getElementById('timeline-btn');
+
+    if (extendedHistory.length === 0) return; // keep hidden
+
+    // Show the toggle button, bar stays hidden until user clicks
+    toggleBtn.classList.add('has-data');
+    label.classList.add('live-label');
+
+    toggleBtn.addEventListener('click', function() {
+      var isOpen = bar.classList.toggle('open');
+      toggleBtn.classList.toggle('active', isOpen);
+      if (!isOpen) enterLiveMode();
+    });
+
+    function timeFromSlider(val) {
+      if (val >= 1000) return null; // live
+      return timelineMin + (val / 999) * (timelineMax - timelineMin);
+    }
+
+    function formatTime(ms) {
+      var d = new Date(ms);
+      var hh = String(d.getHours()).padStart(2, '0');
+      var mm = String(d.getMinutes()).padStart(2, '0');
+      var ss = String(d.getSeconds()).padStart(2, '0');
+      return hh + ':' + mm + ':' + ss;
+    }
+
+    function enterLiveMode() {
+      isLiveMode = true;
+      currentViewTime = 0;
+      slider.value = 1000;
+      label.textContent = 'LIVE';
+      label.classList.add('live-label');
+      stopPlay();
+      restoreLiveState();
+      setStatus(true, 'Live');
+    }
+
+    function enterHistoryMode(time) {
+      if (isLiveMode) {
+        saveLiveState();
+        isLiveMode = false;
+      }
+      currentViewTime = time;
+      label.textContent = formatTime(time);
+      label.classList.remove('live-label');
+      reconstructStateAt(time);
+    }
+
+    slider.addEventListener('input', function() {
+      var val = parseInt(slider.value);
+      if (val >= 1000) {
+        enterLiveMode();
+      } else {
+        var time = timeFromSlider(val);
+        enterHistoryMode(time);
+      }
+    });
+
+    // Play/pause
+    function stopPlay() {
+      isPlaying = false;
+      playBtn.innerHTML = '&#9654;';
+      if (playRAF) {
+        cancelAnimationFrame(playRAF);
+        playRAF = null;
+      }
+    }
+
+    function startPlay() {
+      isPlaying = true;
+      playBtn.innerHTML = '&#9646;&#9646;';
+      var lastFrame = performance.now();
+      // If at live (rightmost), start from beginning
+      if (parseInt(slider.value) >= 1000) {
+        slider.value = 0;
+        var time = timeFromSlider(0);
+        enterHistoryMode(time);
+      }
+
+      function tick(now) {
+        if (!isPlaying) return;
+        var dt = now - lastFrame;
+        lastFrame = now;
+        // Advance at 600x speed: 1 real ms = 600 ms of timeline
+        var currentVal = parseInt(slider.value);
+        var currentTime = timeFromSlider(currentVal);
+        var newTime = currentTime + dt * 600;
+        if (newTime >= timelineMax) {
+          enterLiveMode();
+          return;
+        }
+        var newVal = Math.round(((newTime - timelineMin) / (timelineMax - timelineMin)) * 999);
+        slider.value = Math.min(newVal, 999);
+        label.textContent = formatTime(newTime);
+        label.classList.remove('live-label');
+        currentViewTime = newTime;
+        reconstructStateAt(newTime);
+        playRAF = requestAnimationFrame(tick);
+      }
+
+      playRAF = requestAnimationFrame(tick);
+    }
+
+    playBtn.addEventListener('click', function() {
+      if (isPlaying) {
+        stopPlay();
+      } else {
+        startPlay();
+      }
+    });
+  }
+
+  // --- Init ---
+  function init() {
+    fetch('cities_geo.json')
+      .then(function(resp) { return resp.json(); })
+      .then(function(data) {
+        citiesGeo = data;
+        console.log('Loaded', Object.keys(citiesGeo).length, 'city coordinates');
+        buildVoronoiPolygons();
+
+        // Fetch both histories in parallel, then start polling
+        var historyDone = false, extendedDone = false;
+        function onBothDone() {
+          if (!historyDone || !extendedDone) return;
+          initialized = true;
+          initTimeline();
+          setInterval(fetchLiveAlerts, LIVE_POLL_MS);
+          setInterval(function() { fetchHistory(); }, HISTORY_POLL_MS);
+          setInterval(fadeGreenMarkers, FADE_TICK_MS);
+          fetchLiveAlerts(); // first live poll immediately
+          setStatus(true, 'Live');
+        }
+        fetchHistory(function() { historyDone = true; onBothDone(); });
+        fetchExtendedHistory(function() { extendedDone = true; onBothDone(); });
+      })
+      .catch(function(err) {
+        console.error('Failed to load cities_geo.json:', err);
+        setStatus(false, 'Failed to load geo data');
+      });
+  }
+
+  // --- About control ---
+  function openAbout() {
+    document.getElementById('about-backdrop').classList.add('visible');
+  }
+  function closeAbout() {
+    document.getElementById('about-backdrop').classList.remove('visible');
+  }
+
+  document.getElementById('page-title').addEventListener('click', openAbout);
+  document.getElementById('about-close').addEventListener('click', closeAbout);
+  document.getElementById('about-backdrop').addEventListener('click', function(e) {
+    if (e.target === this) closeAbout();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeAbout();
+  });
+
+  // --- Sound button ---
+  var soundBtn = document.getElementById('sound-btn');
+  soundBtn.textContent = soundMuted ? '\uD83D\uDD07' : '\uD83D\uDD0A';
+  soundBtn.addEventListener('click', function() {
+    soundMuted = !soundMuted;
+    soundBtn.textContent = soundMuted ? '\uD83D\uDD07' : '\uD83D\uDD0A';
+    try { localStorage.setItem('oref-sound-muted', String(soundMuted)); } catch(e) {}
+    if (!soundMuted) getAudioContext();
+  });
+
+  init();
+})();
+</script>
+</body>
+</html>

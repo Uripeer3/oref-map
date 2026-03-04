@@ -1,0 +1,4 @@
+#!/bin/sh
+# Start local dev server at http://localhost:8787.
+# Serves web/ as static files and runs functions/api/* as Cloudflare Workers.
+npx wrangler pages dev web/ "$@"

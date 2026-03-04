@@ -1,0 +1,6 @@
+#!/bin/bash
+# Deploy web/ to Cloudflare Pages (project: oref-map).
+# Requires wrangler authentication: npx wrangler login
+set -e
+cd "$(dirname "$0")"
+npx wrangler pages deploy web/ --project-name oref-map
