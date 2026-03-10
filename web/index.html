@@ -617,6 +617,7 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
     }
 
     document.getElementById('location-btn-row').addEventListener('click', function() {
+      btn.querySelector('.btn-text').textContent = 'מאתר...';
       startWatching();
     });
   }
