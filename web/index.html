@@ -532,6 +532,7 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
   var LIVE_POLL_MS = 1000;
   var HISTORY_POLL_MS = 10000;
   var GREEN_FADE_MS = 120000; // 2 minutes
+  var ALERT_MAX_AGE_MS = 3600000; // 1 hour — safety net for stuck alerts
   var FADE_TICK_MS = 1000;
 
   // --- Map setup ---
@@ -1198,7 +1199,10 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
     var toRemove = [];
     for (var name in locationStates) {
       var entry = locationStates[name];
-      if (entry.state !== 'green') continue;
+      if (entry.state !== 'green') {
+        if (now - entry.since >= ALERT_MAX_AGE_MS) toRemove.push(name);
+        continue;
+      }
       var elapsed = now - entry.since;
       if (elapsed >= GREEN_FADE_MS) {
         toRemove.push(name);
@@ -1314,6 +1318,31 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
       });
   }
 
+  function processHistoryEntries(entries) {
+    if (!Array.isArray(entries)) return;
+
+    entries.sort(function(a, b) {
+      return (a.alertDate || '').localeCompare(b.alertDate || '');
+    });
+
+    var newEntries = 0;
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i];
+      var alertDate = entry.alertDate || '';
+      if (lastHistoryDate && alertDate <= lastHistoryDate) continue;
+      processHistoryEntry(entry);
+      newEntries++;
+    }
+
+    if (entries.length > 0) {
+      lastHistoryDate = entries[entries.length - 1].alertDate || lastHistoryDate;
+    }
+
+    if (newEntries > 0) {
+      console.log('History: processed', newEntries, 'new entries');
+    }
+  }
+
   function fetchHistory(onDone) {
     apiFetch('history')
       .then(function(resp) {
@@ -1330,36 +1359,18 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
         try {
           entries = JSON.parse(text);
         } catch (parseErr) {
-          console.error('History JSON parse error:', parseErr, '\nRaw response:', text);
-          throw parseErr;
+          console.warn('History JSON truncated (' + text.length + ' chars), retrying...', parseErr);
+          return fetch(PROXY_BASE + apiPrefix + '/history', { cache: 'no-store' })
+            .then(function(r) { return r.text(); })
+            .then(function(t) {
+              t = stripBom(t).trim();
+              try { entries = JSON.parse(t); }
+              catch (e) { console.error('History retry also failed (' + t.length + ' chars):', e); throw e; }
+              processHistoryEntries(entries);
+              if (onDone) onDone();
+            });
         }
-        if (!Array.isArray(entries)) { if (onDone) onDone(); return; }
-
-        // Sort by alertDate ascending
-        entries.sort(function(a, b) {
-          return (a.alertDate || '').localeCompare(b.alertDate || '');
-        });
-
-        var newEntries = 0;
-        for (var i = 0; i < entries.length; i++) {
-          var entry = entries[i];
-          var alertDate = entry.alertDate || '';
-
-          // On subsequent polls, only process new entries
-          if (lastHistoryDate && alertDate <= lastHistoryDate) continue;
-
-          processHistoryEntry(entry);
-          newEntries++;
-        }
-
-        if (entries.length > 0) {
-          lastHistoryDate = entries[entries.length - 1].alertDate || lastHistoryDate;
-        }
-
-        if (newEntries > 0) {
-          console.log('History: processed', newEntries, 'new entries');
-        }
-
+        processHistoryEntries(entries);
         if (onDone) onDone();
       })
       .catch(function(err) {
@@ -1466,6 +1477,7 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
           weight: 1
         });
       } else {
+        if (targetTime - sinceTime >= ALERT_MAX_AGE_MS) continue; // stale alert
         polygon.setStyle({
           color: COLORS[s],
           fillColor: COLORS[s],
@@ -1658,7 +1670,7 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
       if (range <= 0) return;
 
       // Walk events, track per-location active state, emit bands
-      var locStates = {}; // location -> 'red'|'purple'|'yellow' or absent
+      var locStates = {}; // location -> {state, since}
       var bands = [];     // [{start, end, state}]
       var curState = null;
       var curStart = 0;
@@ -1666,19 +1678,25 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
       function dominantState() {
         var best = null, bestP = -1;
         for (var loc in locStates) {
-          var p = STATE_PRIORITY[locStates[loc]] || 0;
-          if (p > bestP) { bestP = p; best = locStates[loc]; }
+          var p = STATE_PRIORITY[locStates[loc].state] || 0;
+          if (p > bestP) { bestP = p; best = locStates[loc].state; }
         }
         return best;
       }
 
+      function expireStale(atTime) {
+        for (var loc in locStates) {
+          if (atTime - locStates[loc].since >= ALERT_MAX_AGE_MS) delete locStates[loc];
+        }
+      }
+
       for (var i = 0; i < extendedHistory.length; i++) {
         var e = extendedHistory[i];
-        // Update location state
+        expireStale(e.alertDate);
         if (e.state === 'green') {
           delete locStates[e.location];
         } else {
-          locStates[e.location] = e.state;
+          locStates[e.location] = { state: e.state, since: e.alertDate };
         }
         var newDom = dominantState();
         if (newDom !== curState) {
@@ -1689,9 +1707,15 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
           curStart = e.alertDate;
         }
       }
-      // Close final band
+      // Close final band, capped at staleness limit
       if (curState) {
-        bands.push({ start: curStart, end: timelineMax, state: curState });
+        // Band ends at the latest location expiry, capped by timelineMax
+        var latestExpiry = 0;
+        for (var loc in locStates) {
+          var exp = locStates[loc].since + ALERT_MAX_AGE_MS;
+          if (exp > latestExpiry) latestExpiry = exp;
+        }
+        bands.push({ start: curStart, end: Math.min(latestExpiry, timelineMax), state: curState });
       }
 
       // Store bands with centers for prev/next navigation
