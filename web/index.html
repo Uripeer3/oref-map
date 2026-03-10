@@ -1627,6 +1627,7 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
 
     // --- Mode switching ---
     function enterLiveMode() {
+      if (isLiveMode) return;
       isLiveMode = true;
       currentViewTime = 0;
       document.getElementById('historyTimeLabel').style.display = 'none';
