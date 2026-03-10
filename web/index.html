@@ -612,7 +612,10 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
 
     if (navigator.permissions) {
       navigator.permissions.query({ name: 'geolocation' }).then(function(result) {
-        if (result.state === 'granted') startWatching();
+        if (result.state === 'granted') {
+          btn.style.display = 'none';
+          startWatching();
+        }
       }).catch(function() {});
     }
 
