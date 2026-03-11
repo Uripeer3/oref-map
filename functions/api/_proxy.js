@@ -13,6 +13,8 @@ function isKnownTitle(title) {
       title.includes('ניתן לצאת') ||
       title.includes('החשש הוסר') ||
       title.includes('יכולים לצאת') ||
+      title.includes('אינם צריכים לשהות') ||
+      title.includes('סיום שהייה בסמיכות') ||
       title === 'עדכון') {
     return true;
   }
