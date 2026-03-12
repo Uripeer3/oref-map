@@ -4,6 +4,13 @@ Live map of Israel showing [Pikud HaOref](https://www.oref.org.il) (Home Front C
 
 **Live**: https://oref-map.org
 
+<table>
+  <tr>
+    <td align="center"><img src="web/og-image.jpg" width="480" alt="Desktop"/><br/>Desktop</td>
+    <td align="center"><img src="web/screenshot-mobile.jpg" width="200" alt="Mobile"/><br/>Mobile</td>
+  </tr>
+</table>
+
 ## Features
 
 - Colored Voronoi area polygons per location — adjacent same-colored areas merge into contiguous zones
