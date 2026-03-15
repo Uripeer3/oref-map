@@ -6,6 +6,9 @@ const OREF_HEADERS = {
 const ROUTES = {
   '/api2/alerts': 'https://www.oref.org.il/warningMessages/alert/Alerts.json',
   '/api2/history': 'https://www.oref.org.il/warningMessages/alert/History/AlertsHistory.json',
+  // '/api2/alarms-history': 'https://alerts-history.oref.org.il/Shared/Ajax/GetAlarmsHistory.aspx',
+  // if Running local server
+  '/api2/alarms-history': 'http://127.0.0.1:5000/Shared/Ajax/GetAlarmsHistory.aspx',
 };
 
 export default {
