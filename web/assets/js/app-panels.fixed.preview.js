@@ -129,58 +129,41 @@ function initStats() {
     });
   }
 
-  function computeTimeHistograms(locationName, selectedCategory) {
-    var hourBuckets = [];
-    var minuteBuckets = [];
-    for (var i = 0; i < 24; i++) hourBuckets.push(0);
-    for (var m = 0; m < 60; m++) minuteBuckets.push(0);
+  function computeHourlyHistogram(locationName, selectedCategory) {
+    var buckets = [];
+    for (var i = 0; i < 24; i++) buckets.push(0);
 
     var total = 0;
     for (var j = 0; j < currentStatsEntries.length; j++) {
       var e = currentStatsEntries[j];
       if (e.location !== locationName || e.state === 'green') continue;
       if (selectedCategory !== 'all' && e.category_desc !== selectedCategory) continue;
-      var dt = new Date(e.alertDate);
-      var hour = dt.getHours();
-      var minute = dt.getMinutes();
-      if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
-        hourBuckets[hour]++;
-        minuteBuckets[minute]++;
+      var hour = new Date(e.alertDate).getHours();
+      if (hour >= 0 && hour <= 23) {
+        buckets[hour]++;
         total++;
       }
     }
 
-    var maxHourBucket = 0;
+    var maxBucket = 0;
     for (var h = 0; h < 24; h++) {
-      if (hourBuckets[h] > maxHourBucket) maxHourBucket = hourBuckets[h];
+      if (buckets[h] > maxBucket) maxBucket = buckets[h];
     }
-
-    var maxMinuteBucket = 0;
-    for (var mm = 0; mm < 60; mm++) {
-      if (minuteBuckets[mm] > maxMinuteBucket) maxMinuteBucket = minuteBuckets[mm];
-    }
-
-    return {
-      hourBuckets: hourBuckets,
-      minuteBuckets: minuteBuckets,
-      total: total,
-      maxHourBucket: maxHourBucket,
-      maxMinuteBucket: maxMinuteBucket
-    };
+    return { buckets: buckets, total: total, maxBucket: maxBucket };
   }
 
   function buildStatsPopupHtml(locationName) {
     var selectedCategory = categorySelect.value || 'all';
-    var stats = computeTimeHistograms(locationName, selectedCategory);
+    var stats = computeHourlyHistogram(locationName, selectedCategory);
     var safeLocation = escapeHtml(locationName);
     var safeCategory = selectedCategory === 'all' ? 'הכל' : escapeHtml(selectedCategory);
 
     var rows = '';
     for (var hour = 0; hour < 24; hour++) {
-      var count = stats.hourBuckets[hour];
+      var count = stats.buckets[hour];
       var barWidth = 0;
-      if (stats.maxHourBucket > 0) {
-        barWidth = Math.round((count / stats.maxHourBucket) * 100);
+      if (stats.maxBucket > 0) {
+        barWidth = Math.round((count / stats.maxBucket) * 100);
         if (count > 0 && barWidth < 8) barWidth = 8;
       }
       var hourLabel = String(hour).padStart(2, '0') + ':00';
@@ -193,31 +176,9 @@ function initStats() {
       '</div>';
     }
 
-    var minuteBars = '';
-    for (var minuteIdx = 0; minuteIdx < 60; minuteIdx++) {
-      var minuteCount = stats.minuteBuckets[minuteIdx];
-      var barHeight = 2;
-      if (stats.maxMinuteBucket > 0) {
-        barHeight = Math.round((minuteCount / stats.maxMinuteBucket) * 34);
-        if (minuteCount > 0 && barHeight < 2) barHeight = 2;
-      }
-      var minuteLabel = String(minuteIdx).padStart(2, '0');
-      var barColor = minuteCount > 0 ? '#3b82f6' : '#e5e7eb';
-      minuteBars += '<span title="' + minuteLabel + ' - ' + minuteCount + '" style="display:inline-block;width:4px;height:' + barHeight + 'px;background:' + barColor + ';border-radius:2px;"></span>';
-    }
-
-    var minuteHistogramHtml =
-      '<div style="margin-top:10px;font-size:12px;color:#333;">\u05e4\u05d9\u05dc\u05d5\u05d7 \u05d4\u05ea\u05e8\u05e2\u05d5\u05ea \u05dc\u05e4\u05d9 \u05d3\u05e7\u05d4 \u05d1\u05e9\u05e2\u05d4 (00-59)</div>' +
-      '<div style="margin-top:4px;border:1px solid #e5e7eb;border-radius:6px;padding:6px;">' +
-        '<div style="display:flex;align-items:flex-end;gap:1px;height:36px;direction:ltr;">' + minuteBars + '</div>' +
-        '<div style="display:flex;justify-content:space-between;font-size:10px;color:#666;direction:ltr;margin-top:4px;">' +
-          '<span>00</span><span>15</span><span>30</span><span>45</span><span>59</span>' +
-        '</div>' +
-      '</div>';
-
     var emptyText = stats.total === 0
       ? '<div style="margin-top:8px;font-size:12px;color:#888;">אין התרעות ליישוב בטווח שנבחר.</div>'
-      : '<div style="margin-top:8px;font-size:12px;color:#333;">פילוח התרעות לפי שעה</div><div style="margin-top:4px;">' + rows + '</div>' + minuteHistogramHtml;
+      : '<div style="margin-top:8px;font-size:12px;color:#333;">פילוח התרעות לפי שעה</div><div style="margin-top:4px;">' + rows + '</div>';
 
     return '<div style="direction:rtl;width:min(430px,88vw);text-align:right;">' +
       '<b>' + safeLocation + '</b>' +
@@ -266,7 +227,6 @@ function initStats() {
     document.getElementById('historyTimeLabel').style.display = 'block';
     document.getElementById('historyTimeLabel').textContent = 'מציג מפת חום לפי מספר התרעות';
     setStatus('err', 'מצב סטטיסטיקה');
-    updateOverlay();
 
     if (openPopupName && openPopupMarker && typeof getStatsPopupHtml === 'function') {
       openPopupMarker.getPopup().setContent(getStatsPopupHtml(openPopupName));
@@ -641,7 +601,7 @@ function initTimeline() {
     var timeStr = formatTime(time);
     label.textContent = timeStr;
     document.getElementById('historyTimeLabel').style.display = 'block';
-    document.getElementById('historyTimeLabel').textContent = 'מראה התרעות משעה ' + timeStr;
+    document.getElementById('historyTimeLabel').textContent = '???? ?????? ???? ' + timeStr;
     reconstructStateAt(time);
     }
 
@@ -661,7 +621,7 @@ function initTimeline() {
   // --- Timeline bands (show duration of active alerts) ---
   var STATE_PRIORITY = { red: 3, purple: 2, yellow: 1, green: 0 };
   var computedBands = []; // [{start, end, state}] - visual tick bands
-  var eventPeaks = []; // [timestamp] - last non-green before each all-clear wave
+  var eventPeaks = []; // [timestamp] â€” last non-green before each all-clear wave
 
   function computeEventPeaks() {
     var peaks = new Set();
@@ -698,14 +658,14 @@ function initTimeline() {
   // --- Play / Pause ---
   function stopPlay() {
     isPlaying = false;
-    playBtn.textContent = '\u25B6';
+    playBtn.textContent = 'â–¶';
     if (playRAF) { cancelAnimationFrame(playRAF); playRAF = null; }
   }
 
   function startPlay() {
 
     isPlaying = true;
-    playBtn.textContent = '\u23F8';
+    playBtn.textContent = 'â¸';
     var lastFrame = performance.now();
     if (parseInt(slider.value) >= 999) {
       slider.value = 0;
@@ -727,7 +687,7 @@ function initTimeline() {
       currentViewTime = newTime;
       var timeStr = formatTime(newTime);
       label.textContent = timeStr;
-      document.getElementById('historyTimeLabel').textContent = 'מראה התרעות משעה ' + timeStr;
+      document.getElementById('historyTimeLabel').textContent = '???? ?????? ???? ' + timeStr;
       reconstructStateAt(newTime);
       playRAF = requestAnimationFrame(tick);
     }

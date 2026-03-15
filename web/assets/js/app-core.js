@@ -182,6 +182,7 @@ var currentTimelineDay = null; // track currently selected day in timeline
 var isStatsMode = false;
 var statsCounts = {}; // name -> count
 var maxStatsCount = 0;
+var getStatsPopupHtml = null; // set by initStats()
 
 // --- Panel history (mobile back button closes panels) ---
 var panelHistoryPushed = false;
@@ -358,7 +359,11 @@ function buildPolygons(data) {
     (function(n, poly) {
       poly.on('click', function() {
         if (document.body.classList.contains('has-overlay')) return;
-        if (isStatsMode) return; // Disable standard popup in stats mode
+        if (isStatsMode) {
+          var statsHtml = (typeof getStatsPopupHtml === 'function') ? getStatsPopupHtml(n) : '';
+          showPopup(n, poly, statsHtml);
+          return;
+        }
         showPopup(n, poly);
       });
       poly.on('mouseover', function() {
@@ -491,9 +496,11 @@ var openPopupMarker = null;
 function updateOverlay() {
   var tlBtn = document.getElementById('timeline-btn');
   var statsBtn = document.getElementById('stats-btn');
-  var panelOpen = document.getElementById('sound-btn').classList.contains('open') ||
-    (tlBtn && tlBtn.classList.contains('open')) ||
-    (statsBtn && statsBtn.classList.contains('open'));
+  var soundOpen = document.getElementById('sound-btn').classList.contains('open');
+  var timelineOpen = tlBtn && tlBtn.classList.contains('open');
+  var statsOpen = statsBtn && statsBtn.classList.contains('open');
+  // In stats mode we allow clicking polygons while the stats panel is open.
+  var panelOpen = soundOpen || timelineOpen || (statsOpen && !isStatsMode);
   var popupOpen = openPopupName !== null;
   document.body.classList.toggle('has-overlay', panelOpen || popupOpen);
 }
@@ -515,7 +522,11 @@ function recordHistory(name, title, alertDate, state) {
   arr.push({ title: title, alertDate: alertDate, state: state });
   // Refresh popup if it's open for this location
   if (openPopupName === name && openPopupMarker) {
-    openPopupMarker.getPopup().setContent(buildPopupHtml(name));
+    if (isStatsMode && typeof getStatsPopupHtml === 'function') {
+      openPopupMarker.getPopup().setContent(getStatsPopupHtml(name));
+    } else {
+      openPopupMarker.getPopup().setContent(buildPopupHtml(name));
+    }
   }
 }
 
@@ -601,11 +612,13 @@ function currentLocationStyle(name) {
   return { color: COLORS[entry.state], fillColor: COLORS[entry.state], fillOpacity: 0.3, opacity: 0.45, weight: entry.state === 'red' ? 0.5 : 1 };
 }
 
-function showPopup(name, marker) {
+function showPopup(name, marker, popupHtml) {
+  var html = (arguments.length >= 3) ? popupHtml : buildPopupHtml(name);
+  if (!html) return;
   openPopupName = name;
   openPopupMarker = marker;
   marker.setStyle(ACTIVE_STYLE);
-  marker.bindPopup(buildPopupHtml(name), { maxWidth: 350 })
+  marker.bindPopup(html, { maxWidth: isStatsMode ? 420 : 350 })
     .openPopup()
     .on('popupclose', function() {
       openPopupName = null; openPopupMarker = null;
