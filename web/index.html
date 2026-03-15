@@ -2231,7 +2231,7 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
       categorySelect.innerHTML = '<option value="all">טוען...</option>';
 
       fetchExtendedHistory(req.fromDate, req.toDate, function(entries) {
-        if (myToken !== statsLoadToken) return;
+        if (myToken !== statsLoadToken || !statsBtn.classList.contains('open')) return;
 
         var filtered = [];
         for (var i = 0; i < entries.length; i++) {
@@ -2255,6 +2255,7 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
     }
 
     function closeStats() {
+      statsLoadToken++;
       statsBtn.classList.remove('open');
       isStatsMode = false;
       statsCounts = {};
