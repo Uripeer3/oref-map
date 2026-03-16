@@ -183,9 +183,25 @@ var audioCtx = null;
 var lastSoundTime = 0;
 var dangerBuffer = null;
 var HISTORY_PROVIDER_STORAGE_KEY = 'oref-history-provider';
+var HISTORY_PROVIDER_AUTO = 'auto';
 var HISTORY_PROVIDER_OFFICIAL = 'official';
 var HISTORY_PROVIDER_TZEVA_ADOM = 'tzeva-adom';
-var historyProvider = HISTORY_PROVIDER_OFFICIAL;
+var HISTORY_PROVIDER_DEFAULT = HISTORY_PROVIDER_AUTO;
+var historyProvider = HISTORY_PROVIDER_DEFAULT;
+
+// Configure the default provider per usage/mode.
+// Use keys like "timeline:3h", "timeline:24h", "timeline:date", "stats:1", "stats:2", "stats:3", "stats:0".
+var HISTORY_PROVIDER_BY_MODE = {
+  'timeline:3h': HISTORY_PROVIDER_OFFICIAL,
+  'timeline:24h': HISTORY_PROVIDER_TZEVA_ADOM,
+  'timeline:date': HISTORY_PROVIDER_TZEVA_ADOM,
+  'stats:1': HISTORY_PROVIDER_TZEVA_ADOM,
+  'stats:2': HISTORY_PROVIDER_TZEVA_ADOM,
+  'stats:3': HISTORY_PROVIDER_TZEVA_ADOM,
+  'stats:0': HISTORY_PROVIDER_TZEVA_ADOM,
+  'bootstrap:1': HISTORY_PROVIDER_TZEVA_ADOM,
+  'default': HISTORY_PROVIDER_TZEVA_ADOM
+};
 
 try {
   soundMuted = localStorage.getItem('oref-sound-muted') !== 'false';
@@ -194,15 +210,16 @@ try {
 } catch(e) {}
 
 function normalizeHistoryProvider(value) {
-  var normalized = String(value || HISTORY_PROVIDER_OFFICIAL)
+  var normalized = String(value || HISTORY_PROVIDER_DEFAULT)
     .trim()
     .toLowerCase()
     .replace(/_/g, '-')
     .replace(/\s+/g, '-');
 
+  if (normalized === 'auto' || normalized === 'default') return HISTORY_PROVIDER_AUTO;
   if (!normalized || normalized === HISTORY_PROVIDER_OFFICIAL) return HISTORY_PROVIDER_OFFICIAL;
   if (normalized === HISTORY_PROVIDER_TZEVA_ADOM || normalized === 'tzevaadom') return HISTORY_PROVIDER_TZEVA_ADOM;
-  return HISTORY_PROVIDER_OFFICIAL;
+  return HISTORY_PROVIDER_DEFAULT;
 }
 
 function getHistoryProvider() {
@@ -222,6 +239,34 @@ function setHistoryProvider(nextProvider) {
     detail: { provider: historyProvider }
   }));
   return true;
+}
+
+function resolveHistoryProvider(mode, options) {
+  var explicit = normalizeHistoryProvider(getHistoryProvider());
+  if (explicit && explicit !== HISTORY_PROVIDER_AUTO) return explicit;
+
+  options = options || {};
+  var context = options.context || 'default';
+  var modeKey = options.modeKey;
+  if (!modeKey && mode !== undefined && mode !== null) {
+    modeKey = String(mode);
+  }
+  if (!modeKey && options.fromDateObj && options.toDateObj) {
+    modeKey = '0';
+  }
+  if (!modeKey && options.fromDateObj) {
+    modeKey = '0';
+  }
+  if (!modeKey) {
+    modeKey = '1';
+  }
+
+  var composite = context + ':' + modeKey;
+  return HISTORY_PROVIDER_BY_MODE[composite] ||
+    HISTORY_PROVIDER_BY_MODE[modeKey] ||
+    HISTORY_PROVIDER_BY_MODE[context] ||
+    HISTORY_PROVIDER_BY_MODE['default'] ||
+    HISTORY_PROVIDER_OFFICIAL;
 }
 
 // --- Timeline state ---
@@ -1091,7 +1136,13 @@ function fetchExtendedHistory(fromDateObj, toDateObj, onDone, mode, options) {
     queryParts.push('mode=0');
   }
 
-  queryParts.push('provider=' + encodeURIComponent(getHistoryProvider()));
+  var provider = resolveHistoryProvider(mode, {
+    context: options.context,
+    modeKey: options.modeKey,
+    fromDateObj: fromDateObj,
+    toDateObj: toDateObj
+  });
+  queryParts.push('provider=' + encodeURIComponent(provider));
 
   if (queryParts.length > 0) {
     apiPath += '?' + queryParts.join('&');

@@ -56,7 +56,7 @@
           setInterval(function() { fetchHistory(); }, HISTORY_POLL_MS);
           setInterval(fadeGreenMarkers, FADE_TICK_MS);
           fetchLiveAlerts();
-          fetchExtendedHistory();
+          fetchExtendedHistory(null, null, null, '1', { context: 'bootstrap', modeKey: '1' });
           updateLiveStatus();
 
           // Show hint for mobile users
@@ -203,6 +203,7 @@
   }
 
   function initHistoryProviderControls() {
+    var autoText = 'אוטומטי (מומלץ)';
     var officialText = 'רשמי - פיקוד העורף';
     var tzevaAdomText = 'ארכיון - צבע אדום';
 
@@ -220,8 +221,15 @@
     }
 
     document.querySelectorAll('.history-provider-select').forEach(function(select) {
+      var autoOpt = select.querySelector('option[value="auto"]');
+      if (!autoOpt) {
+        autoOpt = document.createElement('option');
+        autoOpt.value = 'auto';
+        select.insertBefore(autoOpt, select.firstChild);
+      }
       var officialOpt = select.querySelector('option[value="official"]');
       var tzevaOpt = select.querySelector('option[value="tzeva-adom"]');
+      if (autoOpt) autoOpt.textContent = autoText;
       if (officialOpt) officialOpt.textContent = officialText;
       if (tzevaOpt) tzevaOpt.textContent = tzevaAdomText;
       select.addEventListener('change', function(e) {

@@ -43,6 +43,7 @@
       var hours = currentStatsMode === 1 ? 24 : (currentStatsMode === 2 ? 24 * 7 : 24 * 30);
       return {
         mode: String(currentStatsMode),
+        modeKey: String(currentStatsMode),
         fromDate: null,
         toDate: null,
         startMs: now - hours * 60 * 60 * 1000,
@@ -60,6 +61,7 @@
 
     return {
       mode: '0',
+      modeKey: '0',
       fromDate: fromStart,
       toDate: toStart,
       startMs: fromStart.getTime(),
@@ -298,7 +300,7 @@
       populateCategories(filtered);
       categorySelect.disabled = false;
       applyStatsHeatMap(filtered);
-    }, req.mode, { replaceHistory: true });
+    }, req.mode, { replaceHistory: true, context: 'stats', modeKey: req.modeKey });
   }
 
   function setStatsMode(mode) {
@@ -470,6 +472,7 @@ window.initTimeline = function() {
       currentTimelineDay = null;
       return {
         mode: '1',
+        modeKey: '3h',
         fromDate: null,
         toDate: null,
         startMs: now - (3 * 60 * 60 * 1000),
@@ -479,6 +482,7 @@ window.initTimeline = function() {
       currentTimelineDay = null;
       return {
         mode: '1',
+        modeKey: '24h',
         fromDate: null,
         toDate: null,
         startMs: now - (24 * 60 * 60 * 1000),
@@ -504,6 +508,7 @@ window.initTimeline = function() {
 
     return {
       mode: '0',
+      modeKey: 'date',
       fromDate: new Date(y, m, d, 0, 0, 0, 0),
       toDate: new Date(y, m, d, 0, 0, 0, 0),
       startMs: startMs,
@@ -537,7 +542,7 @@ window.initTimeline = function() {
       if (myToken !== timelineLoadToken) return;
       container.classList.add('has-data');
       applyTimelineRange(req.startMs, req.endMs);
-    }, req.mode, { replaceHistory: true });
+    }, req.mode, { replaceHistory: true, context: 'timeline', modeKey: req.modeKey });
   }
 
 
