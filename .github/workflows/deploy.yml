@@ -22,7 +22,7 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PAGES }}
           command: pages deploy web/ --project-name=oref-map
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
 
@@ -35,24 +35,19 @@ jobs:
       contents: read
     strategy:
       matrix:
-        include:
-          - name: proxy1
-            account_id_secret: CLOUDFLARE_ACCOUNT_ID_PROXY
-            config: wrangler.toml
-          - name: proxy2
-            account_id_secret: CLOUDFLARE_ACCOUNT_ID_PROXY2
-            config: wrangler-proxy2.toml
-          - name: proxy3
-            account_id_secret: CLOUDFLARE_ACCOUNT_ID_PROXY3
-            config: wrangler-proxy3.toml
+        name: [proxy1, proxy2, proxy3]
+    env:
+      ACCOUNT_ID_proxy1: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROXY1 }}
+      ACCOUNT_ID_proxy2: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROXY2 }}
+      ACCOUNT_ID_proxy3: ${{ secrets.CLOUDFLARE_ACCOUNT_ID_PROXY3 }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Deploy Worker (${{ matrix.name }})
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN_PROXY }}
-          accountId: ${{ secrets[matrix.account_id_secret] }}
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env[format('ACCOUNT_ID_{0}', matrix.name)] }}
           wranglerVersion: "4"
-          command: deploy --config ${{ matrix.config }}
+          command: deploy --name ${{ matrix.name }}
           workingDirectory: worker

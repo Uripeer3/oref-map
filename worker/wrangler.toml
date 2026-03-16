@@ -1,4 +1,4 @@
-name = "proxy1"
+name = "oref-proxy"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
 workers_dev = true
