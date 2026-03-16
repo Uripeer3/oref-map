@@ -6,31 +6,26 @@ const OREF_HEADERS = {
 const ROUTES = {
   '/api2/alerts': 'https://www.oref.org.il/warningMessages/alert/Alerts.json',
   '/api2/history': 'https://www.oref.org.il/warningMessages/alert/History/AlertsHistory.json',
-  // '/api2/alarms-history': 'https://alerts-history.oref.org.il/Shared/Ajax/GetAlarmsHistory.aspx',
-  // if Running local server
-  '/api2/alarms-history': 'http://127.0.0.1:5000/Shared/Ajax/GetAlarmsHistory.aspx',
 };
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const target = ROUTES[url.pathname];
-    if (!target) return new Response('Not found', {
-      status: 404,
-      headers: { 'Access-Control-Allow-Origin': 'https://oref-map.org' },
-    });
-
-    // Handle CORS preflight
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': 'https://oref-map.org',
-          'Access-Control-Expose-Headers': 'X-CF-Colo, X-Served-By',
-          'Access-Control-Allow-Methods': 'GET',
-          'Access-Control-Max-Age': '86400',
-        },
-      });
+    
+    let target;
+    if (url.pathname === '/api2/alarms-history') {
+      const fromDate = url.searchParams.get('fromDate');
+      const toDate = url.searchParams.get('toDate');
+      // target = 'http://127.0.0.1:5000/Shared/Ajax/GetAlarmsHistory.aspx?lang=he&mode=0';
+      target = 'https://alerts-history.oref.org.il/Shared/Ajax/GetAlarmsHistory.aspx?lang=he&mode=0';
+      if (fromDate && toDate) {
+         target += `&fromDate=${fromDate}&toDate=${toDate}`;
+      }
+    } else {
+      target = ROUTES[url.pathname];
     }
+
+    if (!target) return new Response('Not found', { status: 404 });
 
     const colo = request.cf?.colo || '';
     const cache = caches.default;
@@ -41,8 +36,6 @@ export default {
     if (cached) {
       const resp = new Response(cached.body, cached);
       resp.headers.set('X-CF-Colo', colo);
-      resp.headers.set('Access-Control-Allow-Origin', 'https://oref-map.org');
-      resp.headers.set('Access-Control-Expose-Headers', 'X-CF-Colo, X-Served-By');
       return resp;
     }
 
@@ -54,9 +47,7 @@ export default {
       status: resp.status,
       headers: {
         'Content-Type': resp.ok ? 'application/json; charset=utf-8' : (resp.headers.get('Content-Type') || 'text/plain'),
-        'Cache-Control': 's-maxage=4, max-age=3',
-        'Access-Control-Allow-Origin': 'https://oref-map.org',
-        'Access-Control-Expose-Headers': 'X-CF-Colo, X-Served-By',
+        'Cache-Control': 's-maxage=1, max-age=2',
         'X-CF-Colo': colo,
         'X-Served-By': 'worker',
       },
