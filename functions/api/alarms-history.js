@@ -1,4 +1,4 @@
-import { orefProxy } from './_proxy.js';
+﻿import { orefProxy } from './_proxy.js';
 
 const OFFICIAL_TARGET = 'https://alerts-history.oref.org.il/Shared/Ajax/GetAlarmsHistory.aspx'
 const TZEVA_ADOM_TARGET = 'https://tzevadom.com/api/alerts-history/summary/custom';
@@ -283,7 +283,7 @@ export async function onRequestGet(context) {
 
     return orefProxy(context, {
       target: targetUrl.toString(),
-      redirectPath: '/api2/alarms-history' + url.search,
+      redirectSuffix: '/api2/alarms-history' + url.search,
       kind: 'alarms-history',
     });
   }
