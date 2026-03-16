@@ -1,4 +1,4 @@
-window.initStats = function() {
+﻿window.initStats = function() {
   var statsBtn = document.getElementById('stats-btn');
   var btnRow = document.getElementById('stats-btn-row');
   var customDatesDiv = document.getElementById('stats-custom-dates');
@@ -286,11 +286,7 @@ window.initStats = function() {
     categorySelect.innerHTML = '<option value="all">טוען...</option>';
 
     fetchExtendedHistory(req.fromDate, req.toDate, function(entries) {
-<<<<<<< HEAD
       if (myToken !== statsLoadToken || !statsBtn.classList.contains('open')) return;
-=======
-      if (myToken !== statsLoadToken) return;
->>>>>>> 6bae34cb1d3e77edadde0470109ab90227b67925
 
       var filtered = [];
       for (var i = 0; i < entries.length; i++) {
@@ -315,10 +311,7 @@ window.initStats = function() {
   }
 
   function closeStats() {
-<<<<<<< HEAD
     statsLoadToken++;
-=======
->>>>>>> 6bae34cb1d3e77edadde0470109ab90227b67925
     statsBtn.classList.remove('open');
     getStatsPopupHtml = null;
     isStatsMode = false;
@@ -399,10 +392,7 @@ window.initTimeline = function() {
   var slider = document.getElementById('timeline-slider');
   var label = document.getElementById('timeline-label');
   var playBtn = document.getElementById('tl-play');
-<<<<<<< HEAD
   var playFlyHandler = null;
-=======
->>>>>>> 6bae34cb1d3e77edadde0470109ab90227b67925
   var datePicker = document.getElementById('timeline-date-picker');
   var mode3hBtn = document.getElementById('tl-mode-3h');
   var mode24hBtn = document.getElementById('tl-mode-24h');
@@ -531,17 +521,12 @@ window.initTimeline = function() {
     computeEventPeaks();
     computeTimelineBands();
     renderTicks();
-<<<<<<< HEAD
     if (eventPeaks.length > 0) {
       seekTo(biggestEventPeak());
     } else {
       slider.value = 999;
       enterHistoryMode(viewTimelineMax);
     }
-=======
-    slider.value = 999;
-    enterHistoryMode(viewTimelineMax);
->>>>>>> 6bae34cb1d3e77edadde0470109ab90227b67925
   }
 
   var timelineLoadToken = 0;
@@ -606,28 +591,21 @@ window.initTimeline = function() {
     container.classList.remove('open');
     stopPlay();
 
-<<<<<<< HEAD
     isZoomingProgrammatically = true;
     map.flyTo(DEFAULT_CENTER, DEFAULT_ZOOM, { duration: 0.7 });
     isZoomedToEvent = false;
-=======
->>>>>>> 6bae34cb1d3e77edadde0470109ab90227b67925
     enterLiveMode();
     updateOverlay();
   }
   closeTimelinePanel = closeTimeline;
 
   openTimelineToLastEvent = function() {
-<<<<<<< HEAD
     if (extendedHistory.length === 0) return;
     if (!isOpen()) openTimeline();
     else computeEventPeaks();
     stopPlay();
     if (eventPeaks.length > 0) seekTo(eventPeaks[eventPeaks.length - 1]);
     else seekTo(viewTimelineMax);
-=======
-    if (!isOpen()) openTimeline();
->>>>>>> 6bae34cb1d3e77edadde0470109ab90227b67925
   };
 
   btnRow.addEventListener('click', function(e) {
@@ -731,7 +709,6 @@ window.initTimeline = function() {
   // --- Timeline bands (show duration of active alerts) ---
   var STATE_PRIORITY = { red: 3, purple: 2, yellow: 1, green: 0 };
   var computedBands = []; // [{start, end, state}] - visual tick bands
-<<<<<<< HEAD
   var eventPeaks = []; // [timestamp] — last non-green before each all-clear wave
   var eventPeakSizes = []; // [number] — unique location count for each peak
   var eventStarts = []; // [timestamp] — first non-green of each event group
@@ -793,20 +770,6 @@ window.initTimeline = function() {
       if (eventPeakSizes[i] >= eventPeakSizes[bestIdx]) bestIdx = i;
     }
     return eventPeaks[bestIdx];
-=======
-  var eventPeaks = []; // [timestamp] - last non-green before each all-clear wave
-
-  function computeEventPeaks() {
-    var peaks = new Set();
-    for (var i = 0; i < extendedHistory.length; i++) {
-      var e = extendedHistory[i];
-      if (e.alertDate >= viewTimelineMin && e.alertDate <= viewTimelineMax && e.state !== 'green') {
-        var rounded = Math.floor(e.alertDate / 10000) * 10000;
-        peaks.add(rounded);
-      }
-    }
-    eventPeaks = Array.from(peaks).sort(function(a,b){return a-b;});
->>>>>>> 6bae34cb1d3e77edadde0470109ab90227b67925
   }
 
   function computeTimelineBands() {
@@ -935,7 +898,6 @@ window.initTimeline = function() {
     isPlaying = false;
     playBtn.textContent = '\u25B6';
     if (playRAF) { cancelAnimationFrame(playRAF); playRAF = null; }
-<<<<<<< HEAD
     if (playFlyHandler) { map.off('moveend', playFlyHandler); playFlyHandler = null; }
   }
 
@@ -953,8 +915,6 @@ window.initTimeline = function() {
       if (computedBands[i].start > time) return computedBands[i].start;
     }
     return null;
-=======
->>>>>>> 6bae34cb1d3e77edadde0470109ab90227b67925
   }
 
   function startPlay() {
@@ -962,7 +922,6 @@ window.initTimeline = function() {
     isPlaying = true;
     playBtn.textContent = '\u23F8';
     var lastFrame = performance.now();
-<<<<<<< HEAD
     var gapEnterFrame = null;
     var playEventIdx = -1;
     if (parseInt(slider.value) >= 999) {
@@ -978,11 +937,6 @@ window.initTimeline = function() {
         if (time >= eventStarts[i] && time < end) return i;
       }
       return -1;
-=======
-    if (parseInt(slider.value) >= 999) {
-      slider.value = 0;
-      enterHistoryMode(viewTimelineMin);
->>>>>>> 6bae34cb1d3e77edadde0470109ab90227b67925
     }
     function tick(now) {
       if (!isPlaying) return;
@@ -993,7 +947,6 @@ window.initTimeline = function() {
         slider.value = 0;
         enterHistoryMode(viewTimelineMin);
         lastFrame = now;
-<<<<<<< HEAD
         gapEnterFrame = null;
         playEventIdx = -1;
         playRAF = requestAnimationFrame(tick);
@@ -1011,18 +964,12 @@ window.initTimeline = function() {
       } else {
         gapEnterFrame = null;
       }
-=======
-        playRAF = requestAnimationFrame(tick);
-        return;
-      }
->>>>>>> 6bae34cb1d3e77edadde0470109ab90227b67925
       slider.value = Math.min(sliderFromTime(newTime), 999);
       currentViewTime = newTime;
       var timeStr = formatTime(newTime);
       label.textContent = timeStr;
       document.getElementById('historyTimeLabel').textContent = 'מראה התרעות משעה ' + timeStr;
       reconstructStateAt(newTime);
-<<<<<<< HEAD
 
       var curIdx = findEventIdx(newTime);
       if (curIdx !== playEventIdx) {
@@ -1047,8 +994,6 @@ window.initTimeline = function() {
         }
       }
 
-=======
->>>>>>> 6bae34cb1d3e77edadde0470109ab90227b67925
       playRAF = requestAnimationFrame(tick);
     }
     playRAF = requestAnimationFrame(tick);
