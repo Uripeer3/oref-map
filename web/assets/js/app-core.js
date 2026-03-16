@@ -16,9 +16,7 @@ var apiPrefix = '/api'; // Pages Function; switches to '/api2' (Worker) if non-T
 function apiFetch(endpoint) {
   return fetch(PROXY_BASE + apiPrefix + '/' + endpoint).then(function(resp) {
     if (apiPrefix === '/api' && resp.url && resp.url.indexOf('/api2/') !== -1) {
-      var u = new URL(resp.url);
-      PROXY_BASE = u.origin !== location.origin ? u.origin : '';
-      console.log('Non-TLV colo detected, switching to ' + PROXY_BASE + '/api2');
+      console.log('Non-TLV colo detected, switching to /api2');
       apiPrefix = '/api2';
     }
     return resp;
@@ -32,21 +30,11 @@ var FADE_TICK_MS = 1000;
 
 // --- Map setup ---
 var DEFAULT_CENTER = [31.6, 34.8], DEFAULT_ZOOM = 8;
-var map = L.map('map', { preferCanvas: true, zoomControl: false }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-L.control.zoom({ position: 'bottomleft' }).addTo(map);
-
+var map = L.map('map', { preferCanvas: true }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors',
   maxZoom: 18
 }).addTo(map);
-
-var isZoomedToEvent = false;
-var isZoomingProgrammatically = false;
-
-map.on('moveend', function() {
-  if (!isZoomingProgrammatically) isZoomedToEvent = false;
-  isZoomingProgrammatically = false;
-});
 
 // --- User location ---
 var userLocationMarker = null;
@@ -150,6 +138,10 @@ function initUserLocation() {
 
 initUserLocation();
 
+document.getElementById('locate-btn').addEventListener('click', function() {
+  maybeZoomToEvent();
+});
+
 // --- State ---
 var locationStates = {};       // {name: {state, since, marker}}
 var locationHistory = {};      // {name: [{title, alertDate, state}, ...]}
@@ -165,47 +157,11 @@ var soundLocation = 'all';
 var audioCtx = null;
 var lastSoundTime = 0;
 var dangerBuffer = null;
-var HISTORY_PROVIDER_STORAGE_KEY = 'oref-history-provider';
-var HISTORY_PROVIDER_OFFICIAL = 'official';
-var HISTORY_PROVIDER_TZEVA_ADOM = 'tzeva-adom';
-var historyProvider = HISTORY_PROVIDER_OFFICIAL;
 
 try {
   soundMuted = localStorage.getItem('oref-sound-muted') !== 'false';
   soundLocation = localStorage.getItem('oref-sound-location') || 'all';
-  historyProvider = normalizeHistoryProvider(localStorage.getItem(HISTORY_PROVIDER_STORAGE_KEY));
 } catch(e) {}
-
-function normalizeHistoryProvider(value) {
-  var normalized = String(value || HISTORY_PROVIDER_OFFICIAL)
-    .trim()
-    .toLowerCase()
-    .replace(/_/g, '-')
-    .replace(/\s+/g, '-');
-
-  if (!normalized || normalized === HISTORY_PROVIDER_OFFICIAL) return HISTORY_PROVIDER_OFFICIAL;
-  if (normalized === HISTORY_PROVIDER_TZEVA_ADOM || normalized === 'tzevaadom') return HISTORY_PROVIDER_TZEVA_ADOM;
-  return HISTORY_PROVIDER_OFFICIAL;
-}
-
-function getHistoryProvider() {
-  return historyProvider;
-}
-
-function setHistoryProvider(nextProvider) {
-  var normalized = normalizeHistoryProvider(nextProvider);
-  if (normalized === historyProvider) return false;
-
-  historyProvider = normalized;
-  try {
-    localStorage.setItem(HISTORY_PROVIDER_STORAGE_KEY, historyProvider);
-  } catch(e) {}
-
-  window.dispatchEvent(new CustomEvent('history-provider-changed', {
-    detail: { provider: historyProvider }
-  }));
-  return true;
-}
 
 // --- Timeline state ---
 var extendedHistory = [];     // sorted ascending by alertDate ms
@@ -218,8 +174,6 @@ var isPlaying = false;
 var playRAF = null;
 var currentViewTime = 0;
 var liveLocationStates = null; // shadow copy of live state
-var polygonHintInterval = null; // showPolygonHint animation interval
-var polygonHintTargets = null;  // targets being pulsed by showPolygonHint
 var closeTimelinePanel = function() {}; // set by initTimeline
 var openTimelineToLastEvent = function() {}; // set by initTimeline
 var currentTimelineDay = null; // track currently selected day in timeline
@@ -228,7 +182,6 @@ var currentTimelineDay = null; // track currently selected day in timeline
 var isStatsMode = false;
 var statsCounts = {}; // name -> count
 var maxStatsCount = 0;
-var getStatsPopupHtml = null; // set by initStats()
 
 // --- Panel history (mobile back button closes panels) ---
 var panelHistoryPushed = false;
@@ -311,16 +264,16 @@ function playDangerSound() {
     playSequence(dangerBuffer);
   } else {
     fetch('mixkit-clear-announce-tones-2861.wav')
-      .then(function(r) {
+      .then(function(r) { 
         if (!r.ok) throw new Error('Fetch failed');
-        return r.arrayBuffer();
+        return r.arrayBuffer(); 
       })
       .then(function(b) { return ctx.decodeAudioData(b); })
       .then(function(buffer) {
         dangerBuffer = buffer;
         playSequence(dangerBuffer);
       })
-      .catch(function(err) {
+      .catch(function(err) { 
         console.error('Failed to play danger WAV, falling back to sine:', err);
         playFallback();
       });
@@ -405,11 +358,7 @@ function buildPolygons(data) {
     (function(n, poly) {
       poly.on('click', function() {
         if (document.body.classList.contains('has-overlay')) return;
-        if (isStatsMode) {
-          var statsHtml = (typeof getStatsPopupHtml === 'function') ? getStatsPopupHtml(n) : '';
-          showPopup(n, poly, statsHtml);
-          return;
-        }
+        if (isStatsMode) return; // Disable standard popup in stats mode
         showPopup(n, poly);
       });
       poly.on('mouseover', function() {
@@ -542,11 +491,9 @@ var openPopupMarker = null;
 function updateOverlay() {
   var tlBtn = document.getElementById('timeline-btn');
   var statsBtn = document.getElementById('stats-btn');
-  var soundOpen = document.getElementById('sound-btn').classList.contains('open');
-  var timelineOpen = tlBtn && tlBtn.classList.contains('open');
-  var statsOpen = statsBtn && statsBtn.classList.contains('open');
-  // In stats mode we allow clicking polygons while the stats panel is open.
-  var panelOpen = soundOpen || timelineOpen || (statsOpen && !isStatsMode);
+  var panelOpen = document.getElementById('sound-btn').classList.contains('open') ||
+    (tlBtn && tlBtn.classList.contains('open')) ||
+    (statsBtn && statsBtn.classList.contains('open'));
   var popupOpen = openPopupName !== null;
   document.body.classList.toggle('has-overlay', panelOpen || popupOpen);
 }
@@ -568,11 +515,7 @@ function recordHistory(name, title, alertDate, state) {
   arr.push({ title: title, alertDate: alertDate, state: state });
   // Refresh popup if it's open for this location
   if (openPopupName === name && openPopupMarker) {
-    if (isStatsMode && typeof getStatsPopupHtml === 'function') {
-      openPopupMarker.getPopup().setContent(getStatsPopupHtml(name));
-    } else {
-      openPopupMarker.getPopup().setContent(buildPopupHtml(name));
-    }
+    openPopupMarker.getPopup().setContent(buildPopupHtml(name));
   }
 }
 
@@ -658,13 +601,11 @@ function currentLocationStyle(name) {
   return { color: COLORS[entry.state], fillColor: COLORS[entry.state], fillOpacity: 0.3, opacity: 0.45, weight: entry.state === 'red' ? 0.5 : 1 };
 }
 
-function showPopup(name, marker, popupHtml) {
-  var html = (arguments.length >= 3) ? popupHtml : buildPopupHtml(name);
-  if (!html) return;
+function showPopup(name, marker) {
   openPopupName = name;
   openPopupMarker = marker;
   marker.setStyle(ACTIVE_STYLE);
-  marker.bindPopup(html, { maxWidth: isStatsMode ? 420 : 350 })
+  marker.bindPopup(buildPopupHtml(name), { maxWidth: 350 })
     .openPopup()
     .on('popupclose', function() {
       openPopupName = null; openPopupMarker = null;
@@ -708,8 +649,7 @@ function showPolygonHint() {
   if (targets.length === 0) return;
 
   var step = 0, totalSteps = 30; // 3 cycles * 10 steps per cycle
-  polygonHintTargets = targets;
-  polygonHintInterval = setInterval(function() {
+  var interval = setInterval(function() {
     var t = (step % 10) / 10;
     var opacity = 0.05 + 0.15 * Math.sin(t * Math.PI);
     for (var i = 0; i < targets.length; i++) {
@@ -720,27 +660,12 @@ function showPolygonHint() {
     }
     step++;
     if (step >= totalSteps) {
-      clearInterval(polygonHintInterval);
-      polygonHintInterval = null;
+      clearInterval(interval);
       for (var j = 0; j < targets.length; j++) {
         targets[j].polygon.setStyle(targets[j].origStyle);
       }
-      polygonHintTargets = null;
     }
   }, 100);
-}
-
-function cancelPolygonHint() {
-  if (polygonHintInterval) {
-    clearInterval(polygonHintInterval);
-    polygonHintInterval = null;
-  }
-  if (polygonHintTargets) {
-    for (var i = 0; i < polygonHintTargets.length; i++) {
-      polygonHintTargets[i].polygon.setStyle(BASE_STYLE);
-    }
-    polygonHintTargets = null;
-  }
 }
 
 // --- Process alerts ---
@@ -860,13 +785,10 @@ function getActiveEventBounds() {
 
 function maybeZoomToEvent() {
   var bounds = getActiveEventBounds();
-  isZoomingProgrammatically = true;
   if (bounds) {
     map.flyToBounds(bounds, { padding: [80, 80], maxZoom: 10, duration: 0.7 });
-    isZoomedToEvent = true;
   } else {
     map.flyTo(DEFAULT_CENTER, DEFAULT_ZOOM, { duration: 0.7 });
-    isZoomedToEvent = false;
   }
 }
 
@@ -883,7 +805,7 @@ function updateLiveStatus() {
     }
   }
   if (dominant) {
-    setStatusHTML(dominant, '<a href="#" id="zoomAlertsLink">התרעות פעילות</a>');
+    setStatus(dominant, 'התרעות פעילות');
   } else {
     var rel = formatRelativeTime(lastDangerTime);
     if (rel) {
@@ -922,14 +844,6 @@ function setStatusHTML(state, html) {
       e.preventDefault();
       e.stopPropagation();
       openTimelineToLastEvent();
-    });
-  }
-  var zoomLink = document.getElementById('zoomAlertsLink');
-  if (zoomLink) {
-    zoomLink.addEventListener('click', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      maybeZoomToEvent();
     });
   }
   statusEl.style.cursor = '';
@@ -1054,29 +968,18 @@ function formatDateForApi(dateObj) {
 function fetchExtendedHistory(fromDateObj, toDateObj, onDone, mode, options) {
   options = options || {};
   var apiPath = 'alarms-history';
-  var queryParts = [];
 
   // If mode is specified (1, 2, 3), use it
   if (mode && mode !== '0') {
-    queryParts.push('mode=' + encodeURIComponent(mode));
+    apiPath += '?mode=' + mode;
   } else if (fromDateObj && toDateObj) {
     // Custom date range (mode 0)
     var dStrFrom = formatDateForApi(fromDateObj);
     var dStrTo = formatDateForApi(toDateObj);
-    queryParts.push('fromDate=' + encodeURIComponent(dStrFrom));
-    queryParts.push('toDate=' + encodeURIComponent(dStrTo));
-    queryParts.push('mode=0');
+    apiPath += '?fromDate=' + dStrFrom + '&toDate=' + dStrTo + '&mode=0';
   } else if (fromDateObj) {
     var dStr = formatDateForApi(fromDateObj);
-    queryParts.push('fromDate=' + encodeURIComponent(dStr));
-    queryParts.push('toDate=' + encodeURIComponent(dStr));
-    queryParts.push('mode=0');
-  }
-
-  queryParts.push('provider=' + encodeURIComponent(getHistoryProvider()));
-
-  if (queryParts.length > 0) {
-    apiPath += '?' + queryParts.join('&');
+    apiPath += '?fromDate=' + dStr + '&toDate=' + dStr + '&mode=0';
   }
 
   if (options.replaceHistory) {
@@ -1131,7 +1034,6 @@ function fetchExtendedHistory(fromDateObj, toDateObj, onDone, mode, options) {
 }
 
 function reconstructStateAt(targetTime) {
-  cancelPolygonHint();
   // Clear current markers entirely
   for (var name in locationStates) {
     var entry = locationStates[name];
@@ -1234,3 +1136,4 @@ function updateShadowState(name, state, since) {
     liveLocationStates[name] = { state: state, since: since || Date.now() };
   }
 }
+

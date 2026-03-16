@@ -1,4 +1,5 @@
-window.initStats = function() {
+// --- Stats Feature ---
+function initStats() {
   var statsBtn = document.getElementById('stats-btn');
   var btnRow = document.getElementById('stats-btn-row');
   var customDatesDiv = document.getElementById('stats-custom-dates');
@@ -118,114 +119,6 @@ window.initStats = function() {
     }
   }
 
-  function escapeHtml(value) {
-    return String(value || '').replace(/[&<>"']/g, function(ch) {
-      if (ch === '&') return '&amp;';
-      if (ch === '<') return '&lt;';
-      if (ch === '>') return '&gt;';
-      if (ch === '"') return '&quot;';
-      return '&#39;';
-    });
-  }
-
-  function computeTimeHistograms(locationName, selectedCategory) {
-    var hourBuckets = [];
-    var minuteBuckets = [];
-    for (var i = 0; i < 24; i++) hourBuckets.push(0);
-    for (var m = 0; m < 60; m++) minuteBuckets.push(0);
-
-    var total = 0;
-    for (var j = 0; j < currentStatsEntries.length; j++) {
-      var e = currentStatsEntries[j];
-      if (e.location !== locationName || e.state === 'green') continue;
-      if (selectedCategory !== 'all' && e.category_desc !== selectedCategory) continue;
-      var dt = new Date(e.alertDate);
-      var hour = dt.getHours();
-      var minute = dt.getMinutes();
-      if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
-        hourBuckets[hour]++;
-        minuteBuckets[minute]++;
-        total++;
-      }
-    }
-
-    var maxHourBucket = 0;
-    for (var h = 0; h < 24; h++) {
-      if (hourBuckets[h] > maxHourBucket) maxHourBucket = hourBuckets[h];
-    }
-
-    var maxMinuteBucket = 0;
-    for (var mm = 0; mm < 60; mm++) {
-      if (minuteBuckets[mm] > maxMinuteBucket) maxMinuteBucket = minuteBuckets[mm];
-    }
-
-    return {
-      hourBuckets: hourBuckets,
-      minuteBuckets: minuteBuckets,
-      total: total,
-      maxHourBucket: maxHourBucket,
-      maxMinuteBucket: maxMinuteBucket
-    };
-  }
-
-  function buildStatsPopupHtml(locationName) {
-    var selectedCategory = categorySelect.value || 'all';
-    var stats = computeTimeHistograms(locationName, selectedCategory);
-    var safeLocation = escapeHtml(locationName);
-    var safeCategory = selectedCategory === 'all' ? 'הכל' : escapeHtml(selectedCategory);
-
-    var rows = '';
-    for (var hour = 0; hour < 24; hour++) {
-      var count = stats.hourBuckets[hour];
-      var barWidth = 0;
-      if (stats.maxHourBucket > 0) {
-        barWidth = Math.round((count / stats.maxHourBucket) * 100);
-        if (count > 0 && barWidth < 8) barWidth = 8;
-      }
-      var hourLabel = String(hour).padStart(2, '0') + ':00';
-      rows += '<div style="display:flex;align-items:center;gap:8px;direction:ltr;margin:3px 0;">' +
-        '<span style="width:42px;font-size:11px;color:#555;text-align:left;">' + hourLabel + '</span>' +
-        '<div style="flex:1;height:10px;background:#f1f5f9;border-radius:999px;overflow:hidden;">' +
-          (count > 0 ? '<span style="display:block;height:100%;width:' + barWidth + '%;background:#f59e0b;"></span>' : '') +
-        '</div>' +
-        '<span style="width:24px;font-size:11px;color:#111;text-align:right;">' + count + '</span>' +
-      '</div>';
-    }
-
-    var minuteBars = '';
-    for (var minuteIdx = 0; minuteIdx < 60; minuteIdx++) {
-      var minuteCount = stats.minuteBuckets[minuteIdx];
-      var barHeight = 2;
-      if (stats.maxMinuteBucket > 0) {
-        barHeight = Math.round((minuteCount / stats.maxMinuteBucket) * 34);
-        if (minuteCount > 0 && barHeight < 2) barHeight = 2;
-      }
-      var minuteLabel = String(minuteIdx).padStart(2, '0');
-      var barColor = minuteCount > 0 ? '#3b82f6' : '#e5e7eb';
-      minuteBars += '<span title="' + minuteLabel + ' - ' + minuteCount + '" style="display:block;width:100%;height:' + barHeight + 'px;background:' + barColor + ';border-radius:2px;"></span>';
-    }
-
-    var minuteHistogramHtml =
-      '<div style="margin-top:10px;font-size:12px;color:#333;">\u05e4\u05d9\u05dc\u05d5\u05d7 \u05d4\u05ea\u05e8\u05e2\u05d5\u05ea \u05dc\u05e4\u05d9 \u05d3\u05e7\u05d4 \u05d1\u05e9\u05e2\u05d4 (00-59)</div>' +
-      '<div style="margin-top:4px;border:1px solid #e5e7eb;border-radius:6px;padding:6px;">' +
-        '<div style="display:grid;grid-template-columns:repeat(60,minmax(0,1fr));column-gap:1px;align-items:end;height:36px;direction:ltr;">' + minuteBars + '</div>' +
-        '<div style="display:flex;justify-content:space-between;font-size:10px;color:#666;direction:ltr;margin-top:4px;">' +
-          '<span>00</span><span>15</span><span>30</span><span>45</span><span>59</span>' +
-        '</div>' +
-      '</div>';
-
-    var emptyText = stats.total === 0
-      ? '<div style="margin-top:8px;font-size:12px;color:#888;">אין התרעות ליישוב בטווח שנבחר.</div>'
-      : '<div style="margin-top:8px;font-size:12px;color:#333;">פילוח התרעות לפי שעה</div><div style="margin-top:4px;">' + rows + '</div>' + minuteHistogramHtml;
-
-    return '<div style="direction:rtl;width:min(430px,88vw);text-align:right;">' +
-      '<b>' + safeLocation + '</b>' +
-      '<div style="margin-top:4px;font-size:12px;color:#555;">קטגוריה: ' + safeCategory + '</div>' +
-      '<div style="margin-top:4px;font-size:13px;color:#111;font-weight:bold;">סה״כ התרעות: ' + stats.total + '</div>' +
-      emptyText +
-    '</div>';
-  }
-
   function applyStatsHeatMap(entries) {
     if (isLiveMode) {
       saveLiveState();
@@ -265,11 +158,6 @@ window.initStats = function() {
     document.getElementById('historyTimeLabel').style.display = 'block';
     document.getElementById('historyTimeLabel').textContent = 'מציג מפת חום לפי מספר התרעות';
     setStatus('err', 'מצב סטטיסטיקה');
-    updateOverlay();
-
-    if (openPopupName && openPopupMarker && typeof getStatsPopupHtml === 'function') {
-      openPopupMarker.getPopup().setContent(getStatsPopupHtml(openPopupName));
-    }
   }
 
   function reloadStatsData() {
@@ -286,7 +174,7 @@ window.initStats = function() {
     categorySelect.innerHTML = '<option value="all">טוען...</option>';
 
     fetchExtendedHistory(req.fromDate, req.toDate, function(entries) {
-      if (myToken !== statsLoadToken || !statsBtn.classList.contains('open')) return;
+      if (myToken !== statsLoadToken) return;
 
       var filtered = [];
       for (var i = 0; i < entries.length; i++) {
@@ -303,7 +191,6 @@ window.initStats = function() {
 
   function setStatsMode(mode) {
     currentStatsMode = parseInt(mode, 10);
-    getStatsPopupHtml = buildStatsPopupHtml;
     setModeButtonStyles(currentStatsMode);
     customDatesDiv.style.display = (currentStatsMode === 0) ? 'block' : 'none';
     updateRangeLabel();
@@ -311,9 +198,7 @@ window.initStats = function() {
   }
 
   function closeStats() {
-    statsLoadToken++;
     statsBtn.classList.remove('open');
-    getStatsPopupHtml = null;
     isStatsMode = false;
     statsCounts = {};
     maxStatsCount = 0;
@@ -378,23 +263,15 @@ window.initStats = function() {
       popPanelHistory();
     }
   });
-
-  window.addEventListener('history-provider-changed', function() {
-    if (statsBtn.classList.contains('open')) {
-      reloadStatsData();
-    }
-  });
 }
 
-window.initTimeline = function() {
+function initTimeline() {
   var container = document.getElementById('timeline-btn');
   var btnRow = document.getElementById('timeline-btn-row');
   var slider = document.getElementById('timeline-slider');
   var label = document.getElementById('timeline-label');
   var playBtn = document.getElementById('tl-play');
-  var playFlyHandler = null;
   var datePicker = document.getElementById('timeline-date-picker');
-  var mode3hBtn = document.getElementById('tl-mode-3h');
   var mode24hBtn = document.getElementById('tl-mode-24h');
   var modeDateBtn = document.getElementById('tl-mode-date');
 
@@ -407,7 +284,7 @@ window.initTimeline = function() {
 
   var viewTimelineMin = 0;
   var viewTimelineMax = 0;
-  var timelineMode = '3h'; // '3h', '24h' or 'date'
+  var timelineMode = '24h'; // '24h' or 'date'
 
   // init the input date to today by default
   var today = new Date();
@@ -420,31 +297,20 @@ window.initTimeline = function() {
 
   // Set mode button styling
   function setTimelineMode(mode) {
-    // 1. Update the state
     timelineMode = mode;
-
-    // 2. Reset all buttons to default
-    const buttons = {
-      '3h': mode3hBtn,
-      '24h': mode24hBtn,
-      'date': modeDateBtn
-    };
-
-    Object.values(buttons).forEach(btn => {
-      btn.style.background = '#f0f0f0';
-      btn.style.borderColor = '#ccc';
-    });
-
-    // 3. Highlight the active button
-    const activeBtn = buttons[mode];
-    if (activeBtn) {
-      activeBtn.style.background = '#93c5fd';
-      activeBtn.style.borderColor = '#3b82f6';
+    if (mode === '24h') {
+      mode24hBtn.style.background = '#93c5fd';
+      mode24hBtn.style.borderColor = '#3b82f6';
+      modeDateBtn.style.background = '#f0f0f0';
+      modeDateBtn.style.borderColor = '#ccc';
+      datePicker.style.display = 'none';
+    } else {
+      mode24hBtn.style.background = '#f0f0f0';
+      mode24hBtn.style.borderColor = '#ccc';
+      modeDateBtn.style.background = '#93c5fd';
+      modeDateBtn.style.borderColor = '#3b82f6';
+      datePicker.style.display = 'inline-block';
     }
-
-    // 4. Toggle DatePicker visibility
-    // Only show if mode is 'date'
-    datePicker.style.display = (mode === 'date') ? 'inline-block' : 'none';
   }
 
   function getTodayIsoDate() {
@@ -466,16 +332,7 @@ window.initTimeline = function() {
 
   function buildTimelineRequest() {
     var now = Date.now();
-    if (timelineMode === '3h') {
-      currentTimelineDay = null;
-      return {
-        mode: '1',
-        fromDate: null,
-        toDate: null,
-        startMs: now - (3 * 60 * 60 * 1000),
-        endMs: now
-      };
-    } else if (timelineMode === '24h') {
+    if (timelineMode === '24h') {
       currentTimelineDay = null;
       return {
         mode: '1',
@@ -519,14 +376,9 @@ window.initTimeline = function() {
     }
 
     computeEventPeaks();
-    computeTimelineBands();
     renderTicks();
-    if (eventPeaks.length > 0) {
-      seekTo(biggestEventPeak());
-    } else {
-      slider.value = 999;
-      enterHistoryMode(viewTimelineMax);
-    }
+    slider.value = 999;
+    enterHistoryMode(viewTimelineMax);
   }
 
   var timelineLoadToken = 0;
@@ -540,14 +392,7 @@ window.initTimeline = function() {
     }, req.mode, { replaceHistory: true });
   }
 
-
   // Mode button handlers
-  mode3hBtn.addEventListener('click', function() {
-    stopPlay();
-    datePicker.value = getTodayIsoDate();
-    setTimelineMode('3h');
-    reloadTimelineData();
-  });
   mode24hBtn.addEventListener('click', function() {
     stopPlay();
     datePicker.value = getTodayIsoDate();
@@ -582,7 +427,7 @@ window.initTimeline = function() {
 
     // Make sure mode is styled correctly on open
     datePicker.value = getTodayIsoDate();
-    setTimelineMode('3h');
+    setTimelineMode('24h');
     reloadTimelineData();
     updateOverlay();
   }
@@ -591,21 +436,13 @@ window.initTimeline = function() {
     container.classList.remove('open');
     stopPlay();
 
-    isZoomingProgrammatically = true;
-    map.flyTo(DEFAULT_CENTER, DEFAULT_ZOOM, { duration: 0.7 });
-    isZoomedToEvent = false;
     enterLiveMode();
     updateOverlay();
   }
   closeTimelinePanel = closeTimeline;
 
   openTimelineToLastEvent = function() {
-    if (extendedHistory.length === 0) return;
     if (!isOpen()) openTimeline();
-    else computeEventPeaks();
-    stopPlay();
-    if (eventPeaks.length > 0) seekTo(eventPeaks[eventPeaks.length - 1]);
-    else seekTo(viewTimelineMax);
   };
 
   btnRow.addEventListener('click', function(e) {
@@ -710,164 +547,17 @@ window.initTimeline = function() {
   var STATE_PRIORITY = { red: 3, purple: 2, yellow: 1, green: 0 };
   var computedBands = []; // [{start, end, state}] - visual tick bands
   var eventPeaks = []; // [timestamp] — last non-green before each all-clear wave
-  var eventPeakSizes = []; // [number] — unique location count for each peak
-  var eventStarts = []; // [timestamp] — first non-green of each event group
-  var eventGroupLocs = []; // [Set] — location sets for each event group
 
   function computeEventPeaks() {
-    eventPeaks = [];
-    eventPeakSizes = [];
-    eventStarts = [];
-    eventGroupLocs = [];
-    var lastNonGreenTime = null;
-    var firstNonGreenTime = null;
-    var prevWasGreen = false;
-    var groupLocs = new Set();
-    for (var j = 0; j < extendedHistory.length; j++) {
-      var entry = extendedHistory[j];
-      if (entry.alertDate < viewTimelineMin || entry.alertDate > viewTimelineMax) continue;
-      if (entry.state !== 'green') {
-        if (prevWasGreen || firstNonGreenTime === null) firstNonGreenTime = entry.alertDate;
-        prevWasGreen = false;
-        lastNonGreenTime = entry.alertDate;
-        groupLocs.add(entry.location);
-      } else {
-        if (!prevWasGreen && lastNonGreenTime !== null) {
-          eventPeaks.push(lastNonGreenTime);
-          eventPeakSizes.push(groupLocs.size);
-          eventStarts.push(firstNonGreenTime);
-          eventGroupLocs.push(groupLocs);
-        }
-        prevWasGreen = true;
-        groupLocs = new Set();
+    var peaks = new Set();
+    for (var i = 0; i < extendedHistory.length; i++) {
+      var e = extendedHistory[i];
+      if (e.alertDate >= viewTimelineMin && e.alertDate <= viewTimelineMax && e.state !== 'green') {
+        var rounded = Math.floor(e.alertDate / 10000) * 10000;
+        peaks.add(rounded);
       }
     }
-    if (!prevWasGreen && lastNonGreenTime !== null) {
-      eventPeaks.push(lastNonGreenTime);
-      eventPeakSizes.push(groupLocs.size);
-      eventStarts.push(firstNonGreenTime);
-      eventGroupLocs.push(groupLocs);
-    }
-  }
-
-  function boundsForEvent(idx) {
-    var locs = eventGroupLocs[idx];
-    if (!locs) return null;
-    var bounds = null;
-    locs.forEach(function(loc) {
-      var polygon = locationPolygons[loc];
-      if (!polygon) return;
-      if (!bounds) bounds = L.latLngBounds(polygon.getBounds());
-      else bounds.extend(polygon.getBounds());
-    });
-    return bounds;
-  }
-
-  function biggestEventPeak() {
-    if (eventPeaks.length === 0 || eventPeakSizes.length === 0) return viewTimelineMax;
-    var bestIdx = 0;
-    for (var i = 1; i < eventPeakSizes.length; i++) {
-      if (eventPeakSizes[i] >= eventPeakSizes[bestIdx]) bestIdx = i;
-    }
-    return eventPeaks[bestIdx];
-  }
-
-  function computeTimelineBands() {
-    var TWENTY_MINS = 20 * 60 * 1000;
-
-    // 1. Generate raw bands for each non-green event
-    var rawBands = [];
-    for (var i = 0; i < extendedHistory.length; i++) {
-        var event = extendedHistory[i];
-        if (event.state === 'green') continue;
-
-        var endTime;
-        var nextEvent = null;
-        for (var j = i + 1; j < extendedHistory.length; j++) {
-            if (extendedHistory[j].location === event.location) {
-                nextEvent = extendedHistory[j];
-                break;
-            }
-        }
-
-        var capTime = event.alertDate + TWENTY_MINS;
-        var endConditionMet = false;
-        if (nextEvent) {
-            if (event.state === 'yellow' && (nextEvent.state === 'green' || nextEvent.state === 'red' || nextEvent.state === 'purple')) {
-                endConditionMet = true;
-            } else if ((event.state === 'red' || event.state === 'purple') && nextEvent.state === 'green') {
-                endConditionMet = true;
-            }
-        }
-
-        if (endConditionMet) {
-            endTime = Math.min(nextEvent.alertDate, capTime);
-        } else {
-            endTime = capTime;
-        }
-
-        rawBands.push({
-            start: event.alertDate,
-            end: endTime,
-            state: event.state,
-            priority: STATE_PRIORITY[event.state]
-        });
-    }
-
-    // 2. Merge bands by finding the dominant state over each time interval
-    var points = new Set([viewTimelineMin, viewTimelineMax]);
-    for (var k = 0; k < rawBands.length; k++) {
-        var band = rawBands[k];
-        if (band.start < viewTimelineMax && band.end > viewTimelineMin) {
-            points.add(Math.max(viewTimelineMin, band.start));
-            points.add(Math.min(viewTimelineMax, band.end));
-        }
-    }
-
-    var sortedPoints = Array.from(points).sort(function(a, b) { return a - b; });
-    var mergedBands = [];
-    for (var p = 0; p < sortedPoints.length - 1; p++) {
-        var start = sortedPoints[p];
-        var end = sortedPoints[p + 1];
-        if (start >= end) continue;
-
-        var midPoint = start + (end - start) / 2;
-        var bestState = 'green';
-        var bestPriority = -1;
-
-        for (var b = 0; b < rawBands.length; b++) {
-            var rawBand = rawBands[b];
-            if (midPoint >= rawBand.start && midPoint < rawBand.end) {
-                if (rawBand.priority > bestPriority) {
-                    bestPriority = rawBand.priority;
-                    bestState = rawBand.state;
-                }
-            }
-        }
-
-        if (bestState !== 'green') {
-            mergedBands.push({ start: start, end: end, state: bestState });
-        }
-    }
-
-    // 3. Coalesce adjacent bands of the same state
-    if (mergedBands.length === 0) {
-        computedBands = [];
-        return;
-    }
-    var finalBands = [];
-    var currentBand = Object.assign({}, mergedBands[0]);
-    for (var m = 1; m < mergedBands.length; m++) {
-        var nextBand = mergedBands[m];
-        if (nextBand.start === currentBand.end && nextBand.state === currentBand.state) {
-            currentBand.end = nextBand.end;
-        } else {
-            finalBands.push(currentBand);
-            currentBand = Object.assign({}, nextBand);
-        }
-    }
-    finalBands.push(currentBand);
-    computedBands = finalBands;
+    eventPeaks = Array.from(peaks).sort(function(a,b){return a-b;});
   }
 
   function renderTicks() {
@@ -876,19 +566,16 @@ window.initTimeline = function() {
     if (range <= 0) return;
 
     var frag = document.createDocumentFragment();
-    for (var i = 0; i < computedBands.length; i++) {
-        var band = computedBands[i];
-        var startPct = ((band.start - viewTimelineMin) / range) * 100;
-        var endPct = ((band.end - viewTimelineMin) / range) * 100;
-        var widthPct = endPct - startPct;
+    for (var i = 0; i < extendedHistory.length; i++) {
+      var e = extendedHistory[i];
+      if (e.alertDate < viewTimelineMin || e.alertDate > viewTimelineMax || e.state === 'green') continue;
 
-        if (widthPct <= 0) continue;
-
-        var span = document.createElement('span');
-        span.style.left = startPct + '%';
-        span.style.width = widthPct + '%';
-        span.style.background = TICK_COLORS[band.state] || TICK_COLORS.red;
-        frag.appendChild(span);
+      var pct = ((e.alertDate - viewTimelineMin) / range) * 100;
+      var span = document.createElement('span');
+      span.style.left = pct + '%';
+      span.style.width = '2px';
+      span.style.background = TICK_COLORS[e.state] || TICK_COLORS.red;
+      frag.appendChild(span);
     }
     ticksEl.appendChild(frag);
   }
@@ -896,47 +583,18 @@ window.initTimeline = function() {
   // --- Play / Pause ---
   function stopPlay() {
     isPlaying = false;
-    playBtn.textContent = '\u25B6';
+    playBtn.textContent = '▶';
     if (playRAF) { cancelAnimationFrame(playRAF); playRAF = null; }
-    if (playFlyHandler) { map.off('moveend', playFlyHandler); playFlyHandler = null; }
-  }
-
-  var GAP_SKIP_MS = 1000; // real-time ms before skipping a dead gap
-
-  function isInBand(time) {
-    for (var i = 0; i < computedBands.length; i++) {
-      if (time >= computedBands[i].start && time <= computedBands[i].end) return true;
-    }
-    return false;
-  }
-
-  function nextBandStart(time) {
-    for (var i = 0; i < computedBands.length; i++) {
-      if (computedBands[i].start > time) return computedBands[i].start;
-    }
-    return null;
   }
 
   function startPlay() {
 
     isPlaying = true;
-    playBtn.textContent = '\u23F8';
+    playBtn.textContent = '⏸';
     var lastFrame = performance.now();
-    var gapEnterFrame = null;
-    var playEventIdx = -1;
     if (parseInt(slider.value) >= 999) {
       slider.value = 0;
       enterHistoryMode(viewTimelineMin);
-      lastFrame = performance.now();
-      gapEnterFrame = null;
-      playEventIdx = -1;
-    }
-    function findEventIdx(time) {
-      for (var i = 0; i < eventStarts.length; i++) {
-        var end = (i + 1 < eventStarts.length) ? eventStarts[i + 1] : viewTimelineMax;
-        if (time >= eventStarts[i] && time < end) return i;
-      }
-      return -1;
     }
     function tick(now) {
       if (!isPlaying) return;
@@ -947,22 +605,8 @@ window.initTimeline = function() {
         slider.value = 0;
         enterHistoryMode(viewTimelineMin);
         lastFrame = now;
-        gapEnterFrame = null;
-        playEventIdx = -1;
         playRAF = requestAnimationFrame(tick);
         return;
-      }
-      if (!isInBand(newTime)) {
-        if (gapEnterFrame === null) gapEnterFrame = now;
-        if (now - gapEnterFrame >= GAP_SKIP_MS) {
-          var next = nextBandStart(newTime);
-          if (next !== null) {
-            newTime = next;
-            gapEnterFrame = null;
-          }
-        }
-      } else {
-        gapEnterFrame = null;
       }
       slider.value = Math.min(sliderFromTime(newTime), 999);
       currentViewTime = newTime;
@@ -970,30 +614,6 @@ window.initTimeline = function() {
       label.textContent = timeStr;
       document.getElementById('historyTimeLabel').textContent = 'מראה התרעות משעה ' + timeStr;
       reconstructStateAt(newTime);
-
-      var curIdx = findEventIdx(newTime);
-      if (curIdx !== playEventIdx) {
-        playEventIdx = curIdx;
-        var bounds = curIdx >= 0 && getActiveEventBounds() ? boundsForEvent(curIdx) : null;
-        if (bounds) {
-          isZoomingProgrammatically = true;
-          isPlaying = false;
-          if (playRAF) { cancelAnimationFrame(playRAF); playRAF = null; }
-          if (playFlyHandler) map.off('moveend', playFlyHandler);
-          playFlyHandler = function() {
-            map.off('moveend', playFlyHandler);
-            playFlyHandler = null;
-            isZoomingProgrammatically = false;
-            isPlaying = true;
-            lastFrame = performance.now();
-            playRAF = requestAnimationFrame(tick);
-          };
-          map.on('moveend', playFlyHandler);
-          map.flyToBounds(bounds, { padding: [80, 80], maxZoom: 10, duration: 0.7 });
-          return;
-        }
-      }
-
       playRAF = requestAnimationFrame(tick);
     }
     playRAF = requestAnimationFrame(tick);
@@ -1026,9 +646,4 @@ window.initTimeline = function() {
     seekTo(viewTimelineMax);
   });
 
-  window.addEventListener('history-provider-changed', function() {
-    if (isOpen()) {
-      reloadTimelineData();
-    }
-  });
 }
