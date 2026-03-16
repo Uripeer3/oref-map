@@ -588,6 +588,7 @@ window.initTimeline = function() {
   }
 
   function closeTimeline() {
+    if (!isOpen()) return;
     container.classList.remove('open');
     stopPlay();
 

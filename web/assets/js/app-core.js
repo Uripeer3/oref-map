@@ -13,8 +13,22 @@
 var PROXY_BASE = '';
 var apiPrefix = '/api'; // Pages Function; switches to '/api2' (Worker) if non-TLV
 
+function resetProxy() {
+  PROXY_BASE = '';
+  apiPrefix = '/api';
+}
+
 function apiFetch(endpoint) {
-  return fetch(PROXY_BASE + apiPrefix + '/' + endpoint).then(function(resp) {
+  var url = PROXY_BASE + apiPrefix + '/' + endpoint;
+  var wasProxy = apiPrefix === '/api2';
+
+  return fetch(url).then(function(resp) {
+    if (!resp.ok && wasProxy) { resetProxy(); }
+    return resp;
+  }, function(err) {
+    if (wasProxy) { resetProxy(); }
+    return Promise.reject(err);
+  }).then(function(resp) {
     if (apiPrefix === '/api' && resp.url && resp.url.indexOf('/api2/') !== -1) {
       var u = new URL(resp.url);
       PROXY_BASE = u.origin !== location.origin ? u.origin : '';
@@ -24,6 +38,9 @@ function apiFetch(endpoint) {
     return resp;
   });
 }
+
+// Periodically reset proxy so client can re-check if direct /api works
+setInterval(resetProxy, 300000); // 5 min
 var LIVE_POLL_MS = 1000;
 var HISTORY_POLL_MS = 10000;
 var GREEN_FADE_MS = 120000; // 2 minutes
@@ -929,6 +946,7 @@ function setStatusHTML(state, html) {
     zoomLink.addEventListener('click', function(e) {
       e.preventDefault();
       e.stopPropagation();
+      closeTimelinePanel();
       maybeZoomToEvent();
     });
   }
