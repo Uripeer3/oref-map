@@ -1,35 +1,6 @@
 ﻿(function () {
   'use strict';
 
-  // --- State ---
-  var initialized = false;
-  var lastErrorMsg = '';
-  var lastCfColo = '';
-  var panelHistoryPushed = false;
-
-  // --- Panel history management ---
-  function pushPanelHistory() {
-    if (!panelHistoryPushed) {
-      try {
-        history.pushState({panelOpen: true}, '');
-        panelHistoryPushed = true;
-      } catch (e) {
-        console.warn('Could not push panel history state', e);
-      }
-    }
-  }
-
-  function popPanelHistory() {
-    if (panelHistoryPushed) {
-      try {
-        history.back();
-        panelHistoryPushed = false;
-      } catch (e) {
-        console.warn('Could not pop panel history state', e);
-      }
-    }
-  }
-
   // --- Init ---
   function init() {
     fetch('locations_polygons.json').then(function (r) {

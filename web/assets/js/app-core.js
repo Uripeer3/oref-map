@@ -377,15 +377,23 @@ var panelHistoryPushed = false;
 
 function pushPanelHistory() {
   if (!panelHistoryPushed) {
-    history.pushState({panel: true}, '');
-    panelHistoryPushed = true;
+    try {
+      history.pushState({panel: true}, '');
+      panelHistoryPushed = true;
+    } catch (e) {
+      console.warn('Could not push panel history state', e);
+    }
   }
 }
 
 function popPanelHistory() {
   if (panelHistoryPushed) {
-    panelHistoryPushed = false;
-    history.back();
+    try {
+      panelHistoryPushed = false;
+      history.back();
+    } catch (e) {
+      console.warn('Could not pop panel history state', e);
+    }
   }
 }
 
