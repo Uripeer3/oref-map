@@ -49,6 +49,7 @@ var LIVE_POLL_MS = 1000;
 var HISTORY_POLL_MS = 10000;
 var GREEN_FADE_MS = 120000; // 2 minutes
 var ALERT_MAX_AGE_MS = 3600000; // 1 hour — safety net for stuck alerts
+var HISTORY_ENTRY_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours
 var FADE_TICK_MS = 1000;
 
 // --- Map setup ---
@@ -179,7 +180,8 @@ function initUserLocation() {
     });
   }
 
-  document.getElementById('location-btn-row').addEventListener('click', function () {
+  document.getElementById('location-btn-row').addEventListener('click', function (e) {
+    if (e) e.stopPropagation();
     if (watchId !== null || userLocationMarker) {
       stopWatching();
       showToast('מיקום הוסר מהמפה');
@@ -710,11 +712,12 @@ function updateOverlay() {
   document.body.classList.toggle('has-overlay', panelOpen || popupOpen);
 }
 
-function recordHistory(name, title, alertDate, state) {
+function recordHistory(name, title, alertDate, state, options) {
+  options = options || {};
   if (!locationHistory[name]) locationHistory[name] = [];
   var ts = parseAlertDate(alertDate);
-  // Skip entries older than 12 hours
-  if (ts && Date.now() - ts > 12 * 60 * 60 * 1000) return;
+  // Skip entries older than 12 hours unless explicitly allowed
+  if (ts && !options.allowOld && Date.now() - ts > HISTORY_ENTRY_MAX_AGE_MS) return;
   var arr = locationHistory[name];
   // Dedup: same title within 1 minute
   for (var i = 0; i < arr.length; i++) {
@@ -1240,11 +1243,61 @@ function fetchHistory(onDone) {
     });
 }
 
+var JERUSALEM_TIMEZONE = 'Asia/Jerusalem';
+var JERUSALEM_DTF = (typeof Intl !== 'undefined' && Intl.DateTimeFormat)
+  ? new Intl.DateTimeFormat('en-US', {
+    timeZone: JERUSALEM_TIMEZONE,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+  : null;
+
+function getJerusalemOffsetMinutes(utcMs) {
+  if (!JERUSALEM_DTF || !JERUSALEM_DTF.formatToParts) return null;
+  var parts = JERUSALEM_DTF.formatToParts(new Date(utcMs));
+  var vals = {};
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i].type !== 'literal') {
+      vals[parts[i].type] = parts[i].value;
+    }
+  }
+  var asUTC = Date.UTC(
+    Number(vals.year),
+    Number(vals.month) - 1,
+    Number(vals.day),
+    Number(vals.hour),
+    Number(vals.minute),
+    Number(vals.second)
+  );
+  return (asUTC - utcMs) / 60000;
+}
+
 function parseAlertDate(dateStr) {
-  // Format: "2026-03-03 12:34:56"
+  // Format: "YYYY-MM-DD HH:MM:SS" (treat as Asia/Jerusalem local time)
   if (!dateStr) return null;
-  var d = new Date(dateStr.replace(' ', 'T'));
-  return isNaN(d.getTime()) ? null : d.getTime();
+  var match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(dateStr);
+  if (!match) return null;
+
+  var year = Number(match[1]);
+  var month = Number(match[2]);
+  var day = Number(match[3]);
+  var hour = Number(match[4]);
+  var minute = Number(match[5]);
+  var second = Number(match[6]);
+  var utcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
+
+  var offsetMinutes = getJerusalemOffsetMinutes(utcGuess);
+  if (offsetMinutes === null || isNaN(offsetMinutes)) {
+    var fallback = new Date(dateStr.replace(' ', 'T'));
+    return isNaN(fallback.getTime()) ? null : fallback.getTime();
+  }
+  var ts = utcGuess - offsetMinutes * 60000;
+  return isNaN(ts) ? null : ts;
 }
 
 function formatDateForApi(dateObj) {
@@ -1320,7 +1373,7 @@ function fetchExtendedHistory(fromDateObj, toDateObj, onDone, mode, options) {
           var entryObj = {location: location, title: title, alertDate: ts, state: state, category_desc: title};
           extendedHistory.push(entryObj);
           parsedEntries.push(entryObj);
-          recordHistory(location, title, e.alertDate || '', state);
+          recordHistory(location, title, e.alertDate || '', state, {allowOld: true});
         }
         // Sort ascending by time
         extendedHistory.sort(function (a, b) {

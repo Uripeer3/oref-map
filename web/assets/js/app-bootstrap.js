@@ -198,8 +198,12 @@
     function updateSelects() {
       var provider = getHistoryProvider();
       document.querySelectorAll('.history-provider-select').forEach(function (select) {
-        if (select.value !== provider) {
-          select.value = provider;
+        var nextValue = provider;
+        if (!select.querySelector('option[value="' + provider + '"]')) {
+          nextValue = select.options.length ? select.options[0].value : provider;
+        }
+        if (select.value !== nextValue) {
+          select.value = nextValue;
         }
       });
     }
