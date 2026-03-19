@@ -454,6 +454,18 @@ window.initTimeline = function () {
   datePicker.style.display = 'none'; // Hidden by default in 24h mode
   datePicker.addEventListener('focus', refreshTimelineDateBounds);
 
+  function focusTimelineProviderSelect() {
+    var select = document.getElementById('history-provider-select-timeline')
+      || document.querySelector('.history-provider-select[data-history-context="timeline"]');
+    if (select && document.activeElement !== select) {
+      try {
+        select.focus({preventScroll: true});
+      } catch (e) {
+        select.focus();
+      }
+    }
+  }
+
   // Set mode button styling
   function setTimelineMode(mode) {
     // 1. Update the state
@@ -485,6 +497,7 @@ window.initTimeline = function () {
     window.dispatchEvent(new CustomEvent('history-provider-mode-changed', {
       detail: {context: 'timeline', modeKey: timelineMode}
     }));
+    focusTimelineProviderSelect();
   }
 
   function getTodayIsoDate() {
