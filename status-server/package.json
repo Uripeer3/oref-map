@@ -1,0 +1,14 @@
+{
+  "name": "oref-status-server",
+  "version": "1.0.0",
+  "description": "Polls Oref alert APIs and serves them locally",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "debug": "node index.js --debug"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
