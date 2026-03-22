@@ -2529,7 +2529,7 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
       fetchHistory(function() {
         initialized = true;
       });
-      // Day-history + gap-fill load in background (independent of live history)
+      // Day-history load in background (independent of live history)
       fetchExtendedHistory(function() {
         rebuildTimelineFn();
       });
