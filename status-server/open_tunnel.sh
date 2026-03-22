@@ -1,1 +1,1 @@
-cloudflared tunnel run oref-debug
+cloudflared tunnel run orefproxy6
