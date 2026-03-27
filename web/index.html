@@ -1636,6 +1636,18 @@ body.idle #right-panel {
     processLiveAlert(mockAlert);
   };
 
+  window.printActiveAlertLocations = function() {
+    var active = [];
+    for (var name in locationStates) {
+      if (locationStates[name] && locationStates[name].state !== 'green') {
+        active.push(name);
+      }
+    }
+    active.sort(function(a, b) { return a.localeCompare(b, 'he'); });
+    console.log(JSON.stringify(active, null, 2));
+    return active;
+  };
+
   function processHistoryEntry(entry) {
     if (!entry || !entry.data || !entry.title) return;
     var title = entry.title.replace(/\s+/g, ' ').trim();
@@ -2179,7 +2191,7 @@ body.idle #right-panel {
       if (isOpen()) rebuildTimeline();
     };
 
-    function switchDate(newDate) {
+    function switchDate(newDate, onSwitched) {
       // Carry forward: when navigating backward, save entries from target day's
       // 23:00-23:59 window (they came from the current day's R2 file and would be
       // lost when we clear extendedHistory)
@@ -2228,6 +2240,7 @@ body.idle #right-panel {
           mergeCarryover();
           rebuildTimeline('first');
           prefetchPrevDay();
+          if (onSwitched) onSwitched();
         });
       } else {
         // Stop history polling for past dates
@@ -2239,6 +2252,7 @@ body.idle #right-panel {
           mergeCarryover();
           rebuildTimeline('first');
           prefetchPrevDay();
+          if (onSwitched) onSwitched();
         });
       }
     }
@@ -2332,6 +2346,60 @@ body.idle #right-panel {
       stopPlay();
       if (eventPeaks.length > 0) seekTo(eventPeaks[eventPeaks.length - 1]);
       else seekTo(timelineMax);
+    };
+
+    window.show_history = function(timestamp) {
+      var raw = timestamp;
+      if (raw instanceof Date) raw = raw.toISOString();
+      if (typeof raw !== 'string') {
+        throw new Error('show_history(timestamp) expects a timestamp string like 2026-03-27T14:28:00');
+      }
+      var normalized = raw.trim();
+      if (/^\d{2}:\d{2}:\d{2}$/.test(normalized)) {
+        normalized = todayDateStr() + 'T' + normalized;
+      }
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(normalized)) {
+        throw new Error('Invalid timestamp. Use YYYY-MM-DDTHH:mm:ss, YYYY-MM-DDTHH:mm, or HH:mm:ss');
+      }
+      if (normalized.length === 16) normalized += ':00';
+
+      var targetTime = new Date(normalized).getTime();
+      if (isNaN(targetTime)) {
+        throw new Error('Invalid timestamp: ' + raw);
+      }
+
+      var targetDate = normalized.slice(0, 10);
+      if (targetDate < DAY_HISTORY_MIN_DATE) {
+        throw new Error('No history available before ' + DAY_HISTORY_MIN_DATE);
+      }
+      if (!isOpen()) openTimeline();
+
+      return new Promise(function(resolve) {
+        function finish() {
+          stopPlay();
+          seekTo(targetTime);
+          resolve({
+            timestamp: normalized,
+            viewingDate: targetDate,
+            appliedTime: new Date(currentViewTime).toISOString(),
+            isLiveMode: isLiveMode
+          });
+        }
+
+        var currentDate = timelineDate || todayDateStr();
+        if (currentDate !== targetDate) {
+          switchDate(targetDate, finish);
+        } else if (!dayHistoryReady) {
+          var prevReady = onDayHistoryReady;
+          onDayHistoryReady = function() {
+            onDayHistoryReady = null;
+            if (prevReady) prevReady();
+            finish();
+          };
+        } else {
+          finish();
+        }
+      });
     };
 
     // --- Date nav buttons ---
