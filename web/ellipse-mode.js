@@ -1,14 +1,17 @@
 (function() {
   'use strict';
 
-  window.initEllipseMode = function(options) {
-    var map = options.map;
-    var getLocationStates = options.getLocationStates;
-    var getLocationHistory = options.getLocationHistory;
-    var getLocationPolygons = options.getLocationPolygons;
-    var getIsLiveMode = options.getIsLiveMode;
-    var getCurrentViewTime = options.getCurrentViewTime;
-    var showToast = options.showToast;
+  // Module-level state — assigned in app:ready handler before createController() is called
+  var map = null;
+  var getLocationStates = function() { return {}; };
+  var getLocationHistory = function() { return {}; };
+  var getLocationPolygons = function() { return {}; };
+  var getCurrentUserPosition = function() { return null; };
+  var getIsLiveMode = function() { return true; };
+  var getCurrentViewTime = function() { return 0; };
+  var showToast = function() {};
+
+  function createController() {
 
     var orefPoints = null;
     var orefPointsPromise = null;
@@ -17,7 +20,6 @@
     var ellipseVisualLayers = [];
     var enabled = false;
     var lastRenderKey = '';
-    var displayMode = 0;
 
     function getDisplayedRedAlerts() {
       var locationStates = getLocationStates();
@@ -127,7 +129,7 @@
 
       ellipseVisualLayers.push(centerMarker, connectionLine, ratioLabel);
 
-      if (displayMode === 3 && cluster.sourceGeometry && Number.isFinite(cluster.normalizedDistanceRatio) && cluster.normalizedDistanceRatio > 0) {
+      if (cluster.sourceGeometry && Number.isFinite(cluster.normalizedDistanceRatio) && cluster.normalizedDistanceRatio > 0) {
         var detailedGeometry = buildScaledGeometry(cluster.sourceGeometry, cluster.normalizedDistanceRatio);
         var detailedOverlay = addGeometryOverlay(detailedGeometry, {
           color: '#1d4ed8',
@@ -621,15 +623,13 @@
             continue;
           }
 
-          if (displayMode >= 1) {
-            var marker = L.marker([point[0], point[1]], {
-              icon: icon,
-              keyboard: false
-            });
-            marker.bindPopup(alert.location + (alert.alertDate ? '<br>' + alert.alertDate : ''));
-            marker.addTo(map);
-            ellipseMarkers.push(marker);
-          }
+          var marker = L.marker([point[0], point[1]], {
+            icon: icon,
+            keyboard: false
+          });
+          marker.bindPopup(alert.location + (alert.alertDate ? '<br>' + alert.alertDate : ''));
+          marker.addTo(map);
+          ellipseMarkers.push(marker);
           placedPoints.push({ lat: point[0], lng: point[1] });
         }
         addEllipseOverlay(placedPoints, clusters[c]);
@@ -732,9 +732,8 @@
     }
 
     function refreshExtendedVisual() {
-      var getCurrentUserPosition = options.getCurrentUserPosition;
       var userPos = getCurrentUserPosition ? getCurrentUserPosition() : null;
-      var shouldDraw = !!(enabled && displayMode >= 2 && userPos);
+      var shouldDraw = !!(enabled && userPos);
       if (!shouldDraw) {
         clearExtendedVisual();
         return Promise.resolve();
@@ -809,25 +808,73 @@
       return sync(true, opts);
     }
 
-    function setDisplayMode(nextMode) {
-      displayMode = nextMode;
-      if (!enabled) return refreshExtendedVisual();
-      return sync(true);
-    }
-
     return {
       clear: clear,
-      render: function() { return setEnabled(true, { showToast: true }); },
       sync: sync,
       setEnabled: setEnabled,
-      setDisplayMode: setDisplayMode,
       refreshExtendedVisual: refreshExtendedVisual,
       clearExtendedVisual: clearExtendedVisual,
       buildUserEllipseAnalysis: buildUserEllipseAnalysis,
-      isEnabled: function() { return enabled; },
-      getDisplayMode: function() { return displayMode; },
-      isLiveMode: function() { return getIsLiveMode(); },
-      currentViewTime: function() { return getCurrentViewTime(); }
+      isEnabled: function() { return enabled; }
     };
-  };
+  }
+
+  function initEllipse() {
+    var AS = window.AppState;
+    if (!AS) return;
+
+    // Wire module-level vars to AppState
+    map = AS.map;
+    getLocationStates      = function() { return AS.locationStates; };
+    getLocationHistory     = function() { return AS.locationHistory; };
+    getLocationPolygons    = function() { return AS.locationPolygons; };
+    getCurrentUserPosition = function() { return AS.userPosition; };
+    getIsLiveMode          = function() { return AS.isLiveMode; };
+    getCurrentViewTime     = function() { return AS.viewTime; };
+    showToast              = function(msg, opts) { AS.showToast(msg, opts); };
+
+    var controller = createController();
+
+    // Restore persisted enabled state
+    var ellipseEnabled = false;
+    try { ellipseEnabled = Number(localStorage.getItem('oref-ellipse-mode')) > 0; } catch (e) {}
+
+    var stub = document.getElementById('ellipse-stub');
+
+    function setEnabled(on, opts) {
+      ellipseEnabled = on;
+      if (stub) stub.classList.toggle('active', on);
+      try { localStorage.setItem('oref-ellipse-mode', on ? '3' : '0'); } catch (e) {}
+      return controller.setEnabled(on, opts || {});
+    }
+
+    // Wire enable button: toggle on/off
+    var enableBtn = document.getElementById('ellipse-enable-btn');
+    if (enableBtn) {
+      enableBtn.addEventListener('click', function() {
+        setEnabled(!ellipseEnabled, { showToast: true });
+      });
+    }
+
+    setEnabled(ellipseEnabled);
+
+    document.addEventListener('app:stateChanged', function() {
+      controller.sync(false);
+      controller.refreshExtendedVisual();
+    });
+    document.addEventListener('app:locationChanged', function() {
+      controller.refreshExtendedVisual();
+    });
+    document.addEventListener('app:escape', function() {
+      controller.clearExtendedVisual();
+    });
+  }
+
+  // Works whether loaded at startup (waits for app:ready) or on-demand (AppState already set)
+  if (window.AppState) {
+    initEllipse();
+  } else {
+    document.addEventListener('app:ready', initEllipse);
+  }
+
 })();
