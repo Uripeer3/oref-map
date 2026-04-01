@@ -518,10 +518,10 @@
       if (!geometry) return;
 
       var overlay = addGeometryOverlay(geometry, {
-        color: '#9922cc',
+        color: '#951111',
         weight: 2,
         opacity: 0.95,
-        fillColor: '#9922cc',
+        fillColor: '#951111',
         fillOpacity: 0.08
       });
       if (overlay) ellipseOverlays.push(overlay);
