@@ -20,10 +20,14 @@ Usage:
     uv run tools/backfill_history.py --today      # merge today first, then interactive
     uv run tools/backfill_history.py --yes        # overwrite all without prompting
     uv run tools/backfill_history.py --today --yes # merge today + overwrite all
+    uv run tools/backfill_history.py --local-r2 --bucket HISTORY_BUCKET
+        # write into local Miniflare R2 bucket (for wrangler pages dev --r2 HISTORY_BUCKET)
 """
 
 import asyncio
+import argparse
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -59,16 +63,51 @@ def ascii_to_geresh(name: str) -> str:
 RETRIES = 3
 RETRY_DELAYS = [2, 5, 15]
 WAR_START = "2026-02-28"
-BUCKET = "oref-history"
+DEFAULT_BUCKET = "oref-history"
 COMPARE_DIR = Path("tmp/backfill-compare")
+
+
+def resolve_wrangler_runner() -> list[str]:
+    """
+    Resolve a command prefix that can invoke Wrangler CLI.
+
+    Preference order:
+    1) npx --yes wrangler
+    2) wrangler directly
+    """
+    for candidate in ("npx", "npx.cmd", "npx.exe"):
+        path = shutil.which(candidate)
+        if path:
+            return [path, "--yes", "wrangler"]
+
+    for candidate in ("wrangler", "wrangler.cmd", "wrangler.exe"):
+        path = shutil.which(candidate)
+        if path:
+            return [path]
+
+    raise RuntimeError(
+        "Could not find 'npx' or 'wrangler' in PATH. "
+        "Install Node.js (or Wrangler), restart the terminal, then retry."
+    )
 
 
 async def fetch_city(
     session: aiohttp.ClientSession,
     semaphore: asyncio.Semaphore,
     city: str,
+    progress: dict,
+    progress_lock: asyncio.Lock,
 ) -> list:
     url = f"{BASE_URL}?lang=he&mode=3&city_0={quote(city)}"
+
+    async def report_done(status: str, entries: int) -> None:
+        async with progress_lock:
+            progress["done"] += 1
+            done = progress["done"]
+            total = progress["total"]
+        pct = (done / total) * 100 if total else 0.0
+        print(f"  [{pct:6.2f}% {done}/{total}] {status} {city} ({entries} entries)")
+
     async with semaphore:
         for attempt in range(RETRIES):
             try:
@@ -77,14 +116,15 @@ async def fetch_city(
                     resp.raise_for_status()
                     text = await resp.text(encoding="utf-8-sig")
                     data = json.loads(text) if text.strip() else []
-                    print(f"  OK  {city} ({len(data)} entries)")
+                    await report_done("OK ", len(data))
                     return data
             except Exception as e:
                 if attempt < RETRIES - 1:
                     print(f"  RETRY {attempt + 1} {city}: {e!r}")
                     await asyncio.sleep(RETRY_DELAYS[attempt])
                 else:
-                    print(f"  ERR {city}: {e!r}")
+                    print(f"  ERR  {city}: {e!r}")
+                    await report_done("ERR", 0)
                     return []
     return []
 
@@ -111,30 +151,79 @@ def to_jsonl(entries: list[dict]) -> str:
     return "".join(json.dumps(e, ensure_ascii=False) + ",\n" for e in entries)
 
 
-def download_remote(day: str, dest: Path) -> list[dict]:
+def download_bucket_object(
+    day: str,
+    dest: Path,
+    bucket: str,
+    use_remote: bool,
+    wrangler_runner: list[str],
+) -> list[dict]:
     """Download YYYY-MM-DD.jsonl from R2. Returns parsed entries, or [] if not found."""
-    result = subprocess.run(
-        ["npx", "--yes", "wrangler", "r2", "object", "get", f"{BUCKET}/{day}.jsonl",
-         "--file", str(dest), "--remote"],
-        capture_output=True,
-        text=True,
-    )
+    cmd = [
+        *wrangler_runner,
+        "r2",
+        "object",
+        "get",
+        f"{bucket}/{day}.jsonl",
+        "--file",
+        str(dest),
+        "--remote" if use_remote else "--local",
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            "Failed to execute Wrangler CLI. "
+            "Please ensure Node.js/Wrangler is installed and available in PATH."
+        ) from exc
     if result.returncode != 0 or not dest.exists() or dest.stat().st_size == 0:
         return []
     return parse_jsonl(dest)
 
 
-def wrangler_put(key: str, data: bytes, content_type: str) -> bool:
+def wrangler_put(
+    key: str,
+    data: bytes,
+    content_type: str,
+    bucket: str,
+    use_remote: bool,
+    wrangler_runner: list[str],
+) -> bool:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".tmp") as f:
         f.write(data)
         tmp_path = f.name
     try:
-        result = subprocess.run(
-            ["npx", "--yes", "wrangler", "r2", "object", "put", f"{BUCKET}/{key}",
-             "--file", tmp_path, "--content-type", content_type, "--remote"],
-            capture_output=True,
-            text=True,
-        )
+        cmd = [
+            *wrangler_runner,
+            "r2",
+            "object",
+            "put",
+            f"{bucket}/{key}",
+            "--file",
+            tmp_path,
+            "--content-type",
+            content_type,
+            "--remote" if use_remote else "--local",
+        ]
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "Failed to execute Wrangler CLI. "
+                "Please ensure Node.js/Wrangler is installed and available in PATH."
+            ) from exc
         if result.returncode != 0:
             print(f"  UPLOAD FAIL {key}:\n{result.stderr}", file=sys.stderr)
             return False
@@ -155,8 +244,31 @@ def merge_entries(backfill: list[dict], remote: list[dict]) -> list[dict]:
 async def main() -> None:
     start_time = datetime.now()
     t0 = time.monotonic()
-    update_today = "--today" in sys.argv
-    auto_yes = "--yes" in sys.argv
+    parser = argparse.ArgumentParser(description="Backfill Oref history into R2.")
+    parser.add_argument("--today", action="store_true", help="Merge today's data first.")
+    parser.add_argument("--yes", action="store_true", help="Overwrite all changed dates without prompting.")
+    parser.add_argument(
+        "--local-r2",
+        action="store_true",
+        help="Read/write a local Miniflare R2 bucket instead of remote R2.",
+    )
+    parser.add_argument(
+        "--bucket",
+        default=DEFAULT_BUCKET,
+        help=f"R2 bucket name (default: {DEFAULT_BUCKET}).",
+    )
+    args = parser.parse_args()
+
+    update_today = args.today
+    auto_yes = args.yes
+    use_remote_r2 = not args.local_r2
+    bucket_name = args.bucket
+
+    target_label = "remote" if use_remote_r2 else "local"
+    print(f"R2 target: {target_label} bucket '{bucket_name}'")
+    wrangler_runner = resolve_wrangler_runner()
+    print(f"Wrangler command: {' '.join(wrangler_runner)}")
+
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     today_str = date.today().isoformat()
 
@@ -194,7 +306,12 @@ async def main() -> None:
 
         print(f"Fetching history for all cities (concurrency={CONCURRENCY})...")
         semaphore = asyncio.Semaphore(CONCURRENCY)
-        tasks = [fetch_city(session, semaphore, city) for city in cities]
+        progress = {"done": 0, "total": len(cities)}
+        progress_lock = asyncio.Lock()
+        tasks = [
+            fetch_city(session, semaphore, city, progress, progress_lock)
+            for city in cities
+        ]
         results = await asyncio.gather(*tasks)
 
     print("Deduplicating and grouping by date...")
@@ -258,9 +375,15 @@ async def main() -> None:
             )
 
         remote_path = COMPARE_DIR / f"{today_str}.remote.jsonl"
-        print(f"{today_str} (today): downloading remote...", end=" ", flush=True)
-        remote_entries = download_remote(today_str, remote_path)
-        print(f"remote={len(remote_entries)}, backfill={len(backfill_entries)}")
+        print(f"{today_str} (today): downloading existing bucket file...", end=" ", flush=True)
+        remote_entries = download_bucket_object(
+            today_str,
+            remote_path,
+            bucket_name,
+            use_remote_r2,
+            wrangler_runner,
+        )
+        print(f"existing={len(remote_entries)}, backfill={len(backfill_entries)}")
 
         merged = merge_entries(backfill_entries, remote_entries)
         remote_rids = {e["rid"] for e in remote_entries}
@@ -277,7 +400,14 @@ async def main() -> None:
             elapsed = time.monotonic() - t0
             print(f"  Uploading {today_str}.jsonl... (elapsed: {elapsed:.0f}s)")
             data = to_jsonl(merged).encode("utf-8")
-            if wrangler_put(f"{today_str}.jsonl", data, "application/jsonl"):
+            if wrangler_put(
+                f"{today_str}.jsonl",
+                data,
+                "application/jsonl",
+                bucket_name,
+                use_remote_r2,
+                wrangler_runner,
+            ):
                 upload_time = datetime.now()
                 upload_str = upload_time.strftime("%H:%M:%S")
                 # Next cron fires at the next :03/:18/:33/:48
@@ -318,10 +448,16 @@ async def main() -> None:
         new_rids = {e["rid"] for e in new_entries}
 
         remote_path = COMPARE_DIR / f"{day}.remote.jsonl"
-        print(f"\n{day}: downloading remote...", end=" ", flush=True)
-        remote_entries = download_remote(day, remote_path)
+        print(f"\n{day}: downloading existing bucket file...", end=" ", flush=True)
+        remote_entries = download_bucket_object(
+            day,
+            remote_path,
+            bucket_name,
+            use_remote_r2,
+            wrangler_runner,
+        )
         remote_rids = {e["rid"] for e in remote_entries}
-        print(f"remote={len(remote_rids)}, new={len(new_rids)}")
+        print(f"existing={len(remote_rids)}, new={len(new_rids)}")
 
         if not remote_entries and not new_entries:
             print("  both empty, skipping")
@@ -365,7 +501,14 @@ async def main() -> None:
         for day, entries in to_upload:
             print(f"  Uploading {day}.jsonl ({len(entries)} entries)...")
             data = to_jsonl(entries).encode("utf-8")
-            if not wrangler_put(f"{day}.jsonl", data, "application/jsonl"):
+            if not wrangler_put(
+                f"{day}.jsonl",
+                data,
+                "application/jsonl",
+                bucket_name,
+                use_remote_r2,
+                wrangler_runner,
+            ):
                 failures.append(day)
                 continue
             success += 1
