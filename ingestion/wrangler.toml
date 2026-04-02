@@ -14,3 +14,9 @@ enabled = true
 [[r2_buckets]]
 binding = "HISTORY_BUCKET"
 bucket_name = "oref-history"
+
+# Optional: mirror ingested entries into D1 for stats APIs.
+# [[d1_databases]]
+# binding = "STATS_DB"
+# database_name = "oref-stats"
+# database_id = "<replace-with-d1-database-id>"

@@ -1,3 +1,10 @@
+import {
+  classifyTitle,
+  normalizeAlertDate,
+  normalizeTitle,
+  parseHourMinute,
+} from '../../shared/alert-state.js';
+
 function toIsraelTimeStr(timestampMs) {
   return new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Jerusalem',
@@ -31,6 +38,113 @@ function r2DateKey(alertDateStr) {
   if (parseInt(alertDateStr.slice(11, 13)) >= 23)
     d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
+}
+
+function normalizeIngestionEntry(entry) {
+  const alertDate = normalizeAlertDate(entry.alertDate);
+  const location = String(entry.data || '').trim();
+  const title = normalizeTitle(entry.category_desc || entry.title);
+
+  if (!alertDate || !location || !title) return null;
+
+  const hourMinute = parseHourMinute(alertDate);
+  if (!hourMinute) return null;
+
+  const rid =
+    entry.rid !== undefined && entry.rid !== null && entry.rid !== ''
+      ? String(entry.rid)
+      : `${alertDate}|${location}|${title}`;
+
+  const titleNorm = normalizeTitle(title);
+
+  return {
+    rid,
+    data: location,
+    alertDate,
+    category_desc: title,
+    dateKey: r2DateKey(alertDate),
+    alertDay: alertDate.slice(0, 10),
+    alertHour: hourMinute.hour,
+    alertMinute: hourMinute.minute,
+    titleNorm,
+    state: classifyTitle(titleNorm),
+  };
+}
+
+async function mirrorToStatsDb(db, rows) {
+  if (!db || rows.length === 0) return;
+
+  const nowIso = new Date().toISOString();
+  const upsertSql = `
+    INSERT INTO stats_alerts (
+      rid,
+      date_key,
+      alert_ts,
+      alert_day,
+      alert_hour,
+      alert_minute,
+      location,
+      title,
+      title_norm,
+      state,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(rid) DO UPDATE SET
+      date_key = excluded.date_key,
+      alert_ts = excluded.alert_ts,
+      alert_day = excluded.alert_day,
+      alert_hour = excluded.alert_hour,
+      alert_minute = excluded.alert_minute,
+      location = excluded.location,
+      title = excluded.title,
+      title_norm = excluded.title_norm,
+      state = excluded.state,
+      updated_at = excluded.updated_at
+  `;
+
+  const coverageSql = `
+    INSERT INTO stats_coverage (date_key, status, updated_at, updated_by)
+    VALUES (?, 'partial', ?, 'ingestion')
+    ON CONFLICT(date_key) DO UPDATE SET
+      status = CASE
+        WHEN stats_coverage.status = 'complete' THEN 'complete'
+        ELSE 'partial'
+      END,
+      updated_at = excluded.updated_at,
+      updated_by = CASE
+        WHEN stats_coverage.status = 'complete' THEN stats_coverage.updated_by
+        ELSE 'ingestion'
+      END
+  `;
+
+  const CHUNK_SIZE = 100;
+  for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + CHUNK_SIZE);
+    const statements = chunk.map((row) =>
+      db.prepare(upsertSql).bind(
+        row.rid,
+        row.dateKey,
+        row.alertDate,
+        row.alertDay,
+        row.alertHour,
+        row.alertMinute,
+        row.data,
+        row.category_desc,
+        row.titleNorm,
+        row.state,
+        nowIso
+      )
+    );
+    await db.batch(statements);
+  }
+
+  const touchedDateKeys = Array.from(new Set(rows.map((row) => row.dateKey).filter(Boolean)));
+  if (touchedDateKeys.length === 0) return;
+
+  const coverageStatements = touchedDateKeys.map((dateKey) =>
+    db.prepare(coverageSql).bind(dateKey, nowIso)
+  );
+  await db.batch(coverageStatements);
 }
 
 // Determine the 15-minute ingestion window from wall time.
@@ -157,9 +271,16 @@ export default {
       return;
     }
 
-    const filtered = entries
-      .filter(e => e.alertDate >= windowStartStr && e.alertDate < windowEndStr)
-      .map(e => ({ data: e.data, alertDate: e.alertDate, category_desc: e.category_desc, rid: e.rid }));
+    const filtered = [];
+    const seenRid = new Set();
+    for (const entry of entries) {
+      const normalized = normalizeIngestionEntry(entry);
+      if (!normalized) continue;
+      if (normalized.alertDate < windowStartStr || normalized.alertDate >= windowEndStr) continue;
+      if (seenRid.has(normalized.rid)) continue;
+      seenRid.add(normalized.rid);
+      filtered.push(normalized);
+    }
 
     filtered.sort((a, b) => a.alertDate < b.alertDate ? -1 : a.alertDate > b.alertDate ? 1 : 0);
 
@@ -168,7 +289,12 @@ export default {
     for (const e of filtered) {
       const d = r2DateKey(e.alertDate);
       if (!byDate[d]) byDate[d] = [];
-      byDate[d].push(e);
+      byDate[d].push({
+        data: e.data,
+        alertDate: e.alertDate,
+        category_desc: e.category_desc,
+        rid: e.rid,
+      });
     }
 
     console.log(`Filtered: ${filtered.length} entries, dates: ${Object.keys(byDate).join(', ') || 'none'}`);
@@ -182,6 +308,16 @@ export default {
         httpMetadata: { contentType: 'application/jsonl' },
       });
       console.log(`Wrote ${d}.jsonl: ${dateEntries.length} new + ${existingText.length} bytes existing`);
+    }
+
+    if (env.STATS_DB) {
+      try {
+        await mirrorToStatsDb(env.STATS_DB, filtered);
+        const touchedDays = Array.from(new Set(filtered.map((e) => e.dateKey))).join(', ') || 'none';
+        console.log(`Mirrored ${filtered.length} entries to STATS_DB (date keys: ${touchedDays})`);
+      } catch (e) {
+        console.error(`STATS_DB mirror failed: ${e.message}`);
+      }
     }
 
     // Write timeslot marker
