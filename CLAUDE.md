@@ -28,7 +28,10 @@ cd worker && npx wrangler deploy   # deploy API proxy Worker
 - `worker/src/index.js` — Cloudflare Worker: fallback proxy for non-TLV users (placement: `azure:israelcentral`)
 - `worker/wrangler.toml` — Worker configuration with placement and `/api2/*` route
 - `ingestion/src/index.js` — Cloudflare Worker cron: ingests extended history API into R2 day-history files
+- `ingestion/sql/0001_stats_schema.sql` — D1 schema for hybrid stats storage (`stats_alerts`, `stats_coverage`)
+- `shared/alert-state.js` — Shared title normalization/classification helpers used by Functions and ingestion
 - `tools/backfill_history.py` — One-off script to rebuild R2 day-history files from the oref API (mode=3, city by city)
+- `tools/backfill_stats_sql.py` — Generates SQL backfill files for D1 stats tables from day JSONL files/R2
 - `tools/poll-coderabbit.sh` — Polls CodeRabbit review status on a PR via GitHub commit status API
 - `docs/map-requirements.md` — Feature requirements doc
 
@@ -43,7 +46,7 @@ Beta/debug features are gated behind URL parameters with an `f-` prefix (e.g. `?
 - **CSS-only** (e.g. hiding a menu item): add `class="f-gated"` to the element, then add a CSS rule `body.f-<name> #element.f-gated { display: block !important; }`.
 - **JS-only**: check `if (FF.myfeature) { ... }`.
 
-**Current flags:** `f-log` (on-screen console overlay), `f-debugapi` (force API proxy host), `f-predict` (launch source prediction lines, experimental).
+**Current flags:** `f-log` (on-screen console overlay), `f-debugapi` (force API proxy host), `f-predict` (launch source prediction lines, experimental), `f-stats` (statistics mode button with date range + alert type filter and hourly/minute histograms).
 
 ## Oref API details
 

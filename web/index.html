@@ -236,6 +236,7 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
 /* Feature-flag-gated elements: hidden by default, shown when flag is active */
 .f-gated { display: none !important; }
 body.f-predict #menu-predict.f-gated { display: block !important; }
+body.f-stats #stats-btn.f-gated { display: flex !important; }
 .menu-item { border-bottom: 1px solid #f0f0f0; }
 .menu-item:last-child { border-bottom: none; }
 .menu-item-row {
@@ -326,6 +327,106 @@ body.f-predict #menu-predict.f-gated { display: block !important; }
 }
 
 /* --- Right-panel buttons (timeline, ellipse) --- */
+#stats-btn {
+  display: none;
+  max-height: 40px;
+  max-width: 220px;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid #ccc;
+  border-radius: 20px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  overflow: hidden;
+  transition: max-width 0.3s ease-out, max-height 0.3s ease-out, border-radius 0.2s ease-out, background 0.2s ease-out, opacity 0.4s ease;
+  direction: ltr;
+  flex-direction: column-reverse;
+}
+@media (hover: hover) {
+  #stats-btn:not(.open):hover {
+    background: rgba(219, 234, 254, 0.92);
+    border-color: #93c5fd;
+  }
+}
+#stats-btn.open {
+  width: 360px;
+  max-width: min(calc(100vw - 48px), 360px);
+  max-height: calc(100vh - 96px);
+  border-radius: 12px;
+  background: rgba(255,255,255,0.97);
+  cursor: default;
+}
+#stats-btn-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  height: 40px;
+  direction: rtl;
+  cursor: pointer;
+}
+#stats-btn.open #stats-btn-row {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  height: auto;
+  padding: 4px 0;
+  border: none;
+  z-index: 1;
+}
+#stats-panel {
+  display: none;
+  padding: 12px;
+  direction: rtl;
+  margin-bottom: 44px;
+}
+#stats-btn.open #stats-panel {
+  display: block;
+  border-bottom: 1px solid #ddd;
+  max-height: calc(100vh - 176px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+#stats-panel label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #555;
+}
+#stats-panel input,
+#stats-panel select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+#stats-results {
+  margin-top: 8px;
+  max-height: 170px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+#stats-results .stats-result-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 12px;
+  direction: rtl;
+  cursor: pointer;
+}
+#stats-results .stats-result-row:hover {
+  background: #eef2ff;
+}
+#stats-results .stats-result-index { color: #64748b; min-width: 20px; }
+#stats-results .stats-result-name { flex: 1; word-break: break-word; color: #0f172a; }
+#stats-results .stats-result-count { font-weight: bold; color: #b45309; min-width: 26px; text-align: left; }
+
 #timeline-btn {
   max-height: 40px;
   max-width: 220px;
@@ -381,6 +482,7 @@ body.f-predict #menu-predict.f-gated { display: block !important; }
 .tl-close { display: none; font-size: 16px; cursor: pointer; color: #888; margin-right: auto; }
 .tl-close:hover { color: #333; }
 #timeline-btn.open .tl-close { display: inline; }
+#stats-btn.open .tl-close { display: inline; }
 
 #timeline-controls {
   display: none;
@@ -543,8 +645,17 @@ body.f-predict #menu-predict.f-gated { display: block !important; }
     top: 110px;
     left: 8px;
   }
-  #timeline-btn {
+  #timeline-btn,
+  #stats-btn {
     max-height: 36px;
+  }
+  #stats-btn.open {
+    max-width: calc(100vw - 24px);
+  }
+  #stats-btn-row {
+    height: 36px;
+    padding: 0 10px;
+    gap: 5px;
   }
   #menu-btn { width: 36px; height: 36px; }
   #menu-panel { top: 56px; }
@@ -564,7 +675,8 @@ body.f-predict #menu-predict.f-gated { display: block !important; }
   body.idle #right-panel { bottom: 8px; }
 }
 /* Idle mode: hide buttons after inactivity */
-body.idle #timeline-btn {
+body.idle #timeline-btn,
+body.idle #stats-btn {
   opacity: 0;
   max-height: 0 !important;
   overflow: hidden;
@@ -693,6 +805,29 @@ body.idle #right-panel {
     <div class="row"><div class="dot dot-yellow"></div><span>התרעה מוקדמת</span></div>
     <div class="row"><div class="dot dot-green"></div><span>האירוע הסתיים</span></div>
   </div>
+  <div id="stats-btn" class="f-gated" title="סטטיסטיקות">
+    <div id="stats-btn-row">
+      <span class="btn-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20V13"/><path d="M22 20V7"/></svg></span>
+      <span class="btn-text">סטטיסטיקות</span>
+      <span class="tl-close">✕</span>
+    </div>
+    <div id="stats-panel">
+      <label for="stats-from-date">מתאריך</label>
+      <input id="stats-from-date" type="date">
+      <label for="stats-to-date">עד תאריך</label>
+      <input id="stats-to-date" type="date">
+      <label for="stats-type-select">סוג התרעה</label>
+      <select id="stats-type-select">
+        <option value="">הכל</option>
+      </select>
+      <div style="display:flex;gap:8px;">
+        <button id="stats-apply-btn" style="flex:1;padding:8px;border:none;background:#2563eb;color:#fff;border-radius:6px;cursor:pointer;font-weight:bold;">הצג על המפה</button>
+        <button id="stats-clear-btn" style="flex:1;padding:8px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;cursor:pointer;font-weight:bold;">נקה</button>
+      </div>
+      <div id="stats-summary" style="margin-top:8px;font-size:12px;color:#334155;line-height:1.4;"></div>
+      <div id="stats-results"></div>
+    </div>
+  </div>
   <div id="timeline-btn" title="ציר זמן">
     <div id="timeline-btn-row">
       <span class="btn-icon"><svg width="18" height="18" viewBox="0 0 100 100" style="vertical-align:middle"><path d="M48,8 L26,26 L48,44 L48,34 C62,34 74,46 74,60 C74,74 62,86 48,86 C38,86 30,80 26,72 L18,76 C24,88 35,96 48,96 C68,96 84,80 84,60 C84,40 68,24 48,24 L48,8Z" fill="#A1C2FA" stroke="#333" stroke-width="3" stroke-linejoin="round"/><circle cx="48" cy="60" r="26" fill="white" stroke="#333" stroke-width="3"/><g stroke="#333" stroke-width="4" stroke-linecap="round"><line x1="48" y1="60" x2="38" y2="52"/><line x1="48" y1="60" x2="32" y2="68"/></g><circle cx="48" cy="60" r="3.5" fill="#A1C2FA" stroke="#333" stroke-width="2"/><g stroke="#333" stroke-width="2.5" stroke-linecap="round"><line x1="48" y1="39" x2="48" y2="43"/><line x1="69" y1="60" x2="65" y2="60"/><line x1="48" y1="81" x2="48" y2="77"/><line x1="27" y1="60" x2="31" y2="60"/></g></svg></span><span class="btn-text">התרעות קודמות</span><span class="tl-close">✕</span>
@@ -737,6 +872,7 @@ body.idle #right-panel {
 
   // --- Extension loader: lazy-loads flag-gated extension scripts, then dispatches app:ready ---
   var EXTENSIONS = [
+    { flag: 'stats', src: '/stats-mode.js' },
     // { flag: 'myfeature', src: '/my-extension.js' }
   ];
   var _extPending = 0, _extInitDone = false;
@@ -1221,7 +1357,8 @@ body.idle #right-panel {
     get userPosition() { return currentUserLatLng || null; },
     get isLiveMode() { return isLiveMode; },
     get viewTime() { return currentViewTime; },
-    showToast: function(msg, opts) { showToast(msg, opts); }
+    showToast: function(msg, opts) { showToast(msg, opts); },
+    refreshOverlay: function() { updateOverlay(); }
   };
 
   // --- Colors ---
@@ -2406,6 +2543,14 @@ body.idle #right-panel {
 
     function openTimeline() {
       if (menuOpen) { closeMenu(); }
+      if (typeof window.closeStatsModePanel === 'function') {
+        window.closeStatsModePanel();
+      } else {
+        var statsBtn = document.getElementById('stats-btn');
+        if (statsBtn && statsBtn.classList.contains('open')) {
+          statsBtn.classList.remove('open');
+        }
+      }
       map.closePopup();
       container.classList.add('open');
       pushPanelHistory();
@@ -3172,7 +3317,12 @@ body.idle #right-panel {
   var IDLE_MS = 45000;
   var _idleTimer = null;
   function _enterIdle() {
-    if (menuOpen || document.getElementById('timeline-btn').classList.contains('open')) {
+    var statsOpen = false;
+    var statsBtnEl = document.getElementById('stats-btn');
+    if (statsBtnEl) {
+      statsOpen = statsBtnEl.classList.contains('open');
+    }
+    if (menuOpen || document.getElementById('timeline-btn').classList.contains('open') || statsOpen) {
       _resetIdle(); return;
     }
     document.body.classList.add('idle');
