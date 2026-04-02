@@ -34,18 +34,26 @@ export async function onRequestGet(context) {
     );
   }
 
-  // Local dev without R2 binding: proxy to production.
-  if (!context.env.HISTORY_BUCKET) {
-    return fetch(`https://oref-map.org/api/alert-types${url.search}`);
+  let entries;
+  let scannedEntries;
+  try {
+    const collected = await collectAlertsForRange(context, {
+      fromDate: dateRange.fromDate,
+      toDate: dateRange.toDate,
+      includeGreen,
+      stateFilter,
+      origin: url.origin,
+    });
+    entries = collected.entries;
+    scannedEntries = collected.scannedEntries;
+  } catch (error) {
+    return jsonResponse(
+      {
+        error: `Stats backend unavailable: ${error?.message || error}`,
+      },
+      503
+    );
   }
-
-  const { entries, scannedEntries } = await collectAlertsForRange(context, {
-    fromDate: dateRange.fromDate,
-    toDate: dateRange.toDate,
-    includeGreen,
-    stateFilter,
-    origin: url.origin,
-  });
 
   const byType = new Map();
   const byState = new Map();

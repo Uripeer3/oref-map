@@ -1,47 +1,19 @@
+import {
+  classifyTitle,
+  normalizeAlertDate,
+  normalizeTitle,
+} from '../../shared/alert-state.js';
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const VALID_STATES = new Set(['red', 'purple', 'yellow', 'green']);
+const COVERAGE_COMPLETE = 'complete';
+
 const OREF_HEADERS = {
   Referer: 'https://www.oref.org.il/',
   'X-Requested-With': 'XMLHttpRequest',
 };
 
-export function normalizeTitle(title) {
-  return String(title || '').replace(/\s+/g, ' ').trim();
-}
-
-// Keep classification aligned with the client and CLAUDE.md.
-export function classifyTitle(title) {
-  const t = normalizeTitle(title);
-
-  if (
-    t.includes('\u05d4\u05d0\u05d9\u05e8\u05d5\u05e2 \u05d4\u05e1\u05ea\u05d9\u05d9\u05dd') ||
-    (t.includes('\u05e0\u05d9\u05ea\u05df \u05dc\u05e6\u05d0\u05ea') &&
-      !t.includes('\u05dc\u05d4\u05d9\u05e9\u05d0\u05e8 \u05d1\u05e7\u05e8\u05d1\u05ea\u05d5')) ||
-    t.includes('\u05d4\u05d7\u05e9\u05e9 \u05d4\u05d5\u05e1\u05e8') ||
-    t.includes('\u05d9\u05db\u05d5\u05dc\u05d9\u05dd \u05dc\u05e6\u05d0\u05ea') ||
-    t.includes('\u05d0\u05d9\u05e0\u05dd \u05e6\u05e8\u05d9\u05db\u05d9\u05dd \u05dc\u05e9\u05d4\u05d5\u05ea') ||
-    t.includes('\u05e1\u05d9\u05d5\u05dd \u05e9\u05d4\u05d9\u05d9\u05d4 \u05d1\u05e1\u05de\u05d9\u05db\u05d5\u05ea') ||
-    t === '\u05e2\u05d3\u05db\u05d5\u05df'
-  ) {
-    return 'green';
-  }
-
-  if (
-    t ===
-      '\u05d1\u05d3\u05e7\u05d5\u05ea \u05d4\u05e7\u05e8\u05d5\u05d1\u05d5\u05ea \u05e6\u05e4\u05d5\u05d9\u05d5\u05ea \u05dc\u05d4\u05ea\u05e7\u05d1\u05dc \u05d4\u05ea\u05e8\u05e2\u05d5\u05ea \u05d1\u05d0\u05d6\u05d5\u05e8\u05da' ||
-    t.includes('\u05dc\u05e9\u05e4\u05e8 \u05d0\u05ea \u05d4\u05de\u05d9\u05e7\u05d5\u05dd \u05dc\u05de\u05d9\u05d2\u05d5\u05df \u05d4\u05de\u05d9\u05d8\u05d1\u05d9') ||
-    t === '\u05d9\u05e9 \u05dc\u05e9\u05d4\u05d5\u05ea \u05d1\u05e1\u05de\u05d9\u05db\u05d5\u05ea \u05dc\u05de\u05e8\u05d7\u05d1 \u05d4\u05de\u05d5\u05d2\u05df' ||
-    t.includes('\u05dc\u05d4\u05d9\u05e9\u05d0\u05e8 \u05d1\u05e7\u05e8\u05d1\u05ea\u05d5')
-  ) {
-    return 'yellow';
-  }
-
-  if (t === '\u05d7\u05d3\u05d9\u05e8\u05ea \u05db\u05dc\u05d9 \u05d8\u05d9\u05e1 \u05e2\u05d5\u05d9\u05df') {
-    return 'purple';
-  }
-
-  return 'red';
-}
+export { classifyTitle, normalizeTitle };
 
 export function jsonResponse(body, status, cacheControl) {
   return new Response(JSON.stringify(body), {
@@ -126,7 +98,7 @@ export function parseStateFilter(url) {
   const stateParams = url.searchParams.getAll('state');
   const statesParams = url.searchParams.getAll('states');
   for (const raw of [...stateParams, ...statesParams]) {
-    values.push(...parseCsv(raw.toLowerCase()));
+    values.push(...parseCsv(raw).map((v) => v.toLowerCase()));
   }
 
   if (values.length === 0) return { set: null, invalid: [] };
@@ -159,8 +131,8 @@ function parseJsonl(text) {
 }
 
 function normalizeHistoryEntry(entry) {
-  const alertDate = String(entry.alertDate || '').replace(' ', 'T').trim();
-  const location = String(entry.data || '').trim();
+  const alertDate = normalizeAlertDate(entry.alertDate);
+  const location = String(entry.data || entry.location || '').trim();
   const title = normalizeTitle(entry.category_desc || entry.title);
 
   if (!alertDate || !location || !title) return null;
@@ -174,9 +146,124 @@ function normalizeHistoryEntry(entry) {
     alertDate,
     location,
     title,
-    state: classifyTitle(title),
+    state: String(entry.state || classifyTitle(title)),
     ridKey,
   };
+}
+
+function buildInClause(values) {
+  if (!values || values.length === 0) return null;
+  return values.map(() => '?').join(', ');
+}
+
+async function getSqlCoveredDateKeys(db, dateKeys) {
+  if (!db || dateKeys.length === 0) return new Set();
+  const inClause = buildInClause(dateKeys);
+  if (!inClause) return new Set();
+
+  try {
+    const query = db.prepare(
+      `SELECT date_key, status FROM stats_coverage WHERE date_key IN (${inClause})`
+    );
+    const result = await query.bind(...dateKeys).all();
+    const rows = result?.results || [];
+    const complete = new Set();
+    for (const row of rows) {
+      const key = String(row.date_key || '');
+      const status = String(row.status || '').toLowerCase();
+      if (key && status === COVERAGE_COMPLETE) {
+        complete.add(key);
+      }
+    }
+    return complete;
+  } catch (error) {
+    console.warn(`stats SQL coverage lookup failed: ${error?.message || error}`);
+    return new Set();
+  }
+}
+
+function normalizeSqlRow(row) {
+  const normalized = normalizeHistoryEntry({
+    alertDate: row.alert_ts,
+    data: row.location,
+    title: row.title,
+    state: row.state,
+    rid: row.rid,
+  });
+  return normalized;
+}
+
+async function collectFromSql(db, options) {
+  const { rangeStart, rangeEnd, includeGreen, typeFilter, stateFilter, coveredDateKeys } = options;
+  if (!db || coveredDateKeys.length === 0) {
+    return { entries: [], ok: true };
+  }
+
+  const conditions = ['alert_ts >= ?', 'alert_ts <= ?'];
+  const params = [rangeStart, rangeEnd];
+
+  const dateInClause = buildInClause(coveredDateKeys);
+  if (dateInClause) {
+    conditions.push(`date_key IN (${dateInClause})`);
+    params.push(...coveredDateKeys);
+  }
+
+  if (!includeGreen) {
+    conditions.push("state <> 'green'");
+  }
+
+  if (stateFilter && stateFilter.size > 0) {
+    const stateList = Array.from(stateFilter);
+    const stateInClause = buildInClause(stateList);
+    conditions.push(`state IN (${stateInClause})`);
+    params.push(...stateList);
+  }
+
+  if (typeFilter && typeFilter.size > 0) {
+    const typeList = Array.from(typeFilter);
+    const typeInClause = buildInClause(typeList);
+    conditions.push(`title_norm IN (${typeInClause})`);
+    params.push(...typeList);
+  }
+
+  const query = `
+    SELECT rid, alert_ts, location, title, state
+    FROM stats_alerts
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY alert_ts ASC
+  `;
+
+  try {
+    const result = await db.prepare(query).bind(...params).all();
+    const rows = result?.results || [];
+    const entries = [];
+    for (const row of rows) {
+      const normalized = normalizeSqlRow(row);
+      if (normalized) entries.push(normalized);
+    }
+    return { entries, ok: true };
+  } catch (error) {
+    console.warn(`stats SQL query failed: ${error?.message || error}`);
+    return { entries: [], ok: false };
+  }
+}
+
+async function collectFromR2(historyBucket, dateKeys) {
+  if (!historyBucket || dateKeys.length === 0) {
+    return { entries: [] };
+  }
+
+  const rawEntries = [];
+
+  for (const dateKey of dateKeys) {
+    const object = await historyBucket.get(`${dateKey}.jsonl`);
+    if (!object) continue;
+
+    const dayEntries = parseJsonl(await object.text());
+    rawEntries.push(...dayEntries);
+  }
+
+  return { entries: rawEntries };
 }
 
 async function fetchRecentHistoryEntries(origin) {
@@ -224,19 +311,52 @@ export async function collectAlertsForRange(context, options) {
     entries.push(entry);
   }
 
-  for (const dateKey of dateKeys) {
-    const object = await context.env.HISTORY_BUCKET.get(`${dateKey}.jsonl`);
-    if (!object) continue;
+  const db = context?.env?.STATS_DB;
+  const historyBucket = context?.env?.HISTORY_BUCKET;
 
-    const dayEntries = parseJsonl(await object.text());
-    for (const entry of dayEntries) {
-      accumulate(entry);
+  let coveredDateKeys = [];
+  let uncoveredDateKeys = dateKeys;
+
+  if (db) {
+    const coveredSet = await getSqlCoveredDateKeys(db, dateKeys);
+    coveredDateKeys = dateKeys.filter((key) => coveredSet.has(key));
+    uncoveredDateKeys = dateKeys.filter((key) => !coveredSet.has(key));
+
+    const sqlCollected = await collectFromSql(db, {
+      rangeStart,
+      rangeEnd,
+      includeGreen,
+      typeFilter,
+      stateFilter,
+      coveredDateKeys,
+    });
+    if (!sqlCollected.ok) {
+      uncoveredDateKeys = dateKeys;
+      coveredDateKeys = [];
+    } else {
+      for (const entry of sqlCollected.entries) {
+        accumulate(entry);
+      }
     }
   }
 
+  if (uncoveredDateKeys.length > 0) {
+    if (!historyBucket) {
+      throw new Error(
+        `Missing HISTORY_BUCKET binding for uncovered date(s): ${uncoveredDateKeys.join(', ')}`
+      );
+    }
+    const r2Collected = await collectFromR2(historyBucket, uncoveredDateKeys);
+    for (const entry of r2Collected.entries) {
+      accumulate(entry);
+    }
+  } else if (!db && !historyBucket) {
+    throw new Error('Missing stats storage bindings: STATS_DB and HISTORY_BUCKET are both unavailable');
+  }
+
   // CLAUDE.md principle: complete recent history is mandatory.
-  // If the range touches today, supplement R2 with recent History API events
-  // to bridge ingestion lag.
+  // If the range touches today, supplement persisted data with recent History API
+  // events to bridge ingestion lag.
   if (origin && fromDate <= todayIsrael && toDate >= todayIsrael) {
     const recentHistory = await fetchRecentHistoryEntries(origin);
     for (const entry of recentHistory) {

@@ -11,7 +11,8 @@ A static single-page web app showing live Pikud HaOref (Home Front Command) aler
 - **API proxy (tier 1)**: Cloudflare Pages Functions (`functions/api/`) — serves TLV users directly, redirects others
 - **API proxy (tier 2)**: Cloudflare Worker (`worker/`) with placement `region = "azure:israelcentral"` — fallback for non-TLV users
 - **History storage**: Cloudflare R2 bucket (`oref-history`) with per-day JSONL files
-- **Ingestion**: Cloudflare Worker with cron trigger (`ingestion/`) — appends to R2 every 2 minutes with multi-attempt per 15-min window
+- **Stats storage**: Cloudflare D1 (`stats_alerts`, `stats_coverage`) used by stats APIs with R2 fallback
+- **Ingestion**: Cloudflare Worker with cron trigger (`ingestion/`) — appends to R2 every 2 minutes and mirrors rows to D1
 - **No frameworks**: Vanilla JS, CSS
 
 ## Data Sources

@@ -36,6 +36,8 @@ Requires [Node.js](https://nodejs.org) and `npx` (comes with npm). Uses [Wrangle
 
 The polygon data file (`locations_polygons.json`) is not in the repo — `./web-dev` downloads it automatically from the live site if missing.
 
+Hybrid stats storage (R2 + D1) setup and backfill steps are documented in `docs/stats-sql.md`.
+
 ## Deploy
 
 Deployed to [Cloudflare Pages](https://pages.cloudflare.com) (static assets + TLV proxy):
