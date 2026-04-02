@@ -4,6 +4,10 @@
 
 A static single-page web app showing live Pikud HaOref (Home Front Command) alerts as colored area polygons on a map of Israel. No build step — all JS/CSS is inline in `web/index.html`. Static assets deployed on Cloudflare Pages; API proxy uses a two-tier architecture: Pages Functions handle TLV-routed users directly, non-TLV users are redirected to a placement-pinned Worker.
 
+Note: the live visitor counter is separate from the Oref proxy path. It is served by
+the dedicated `presence-worker/` Worker at `https://presence.oref-map.org/presence`
+and uses a Durable Object to count sessions seen in the last hour.
+
 ## Stack
 
 - **Map**: Leaflet.js (v1.9.4) + OpenStreetMap tiles
