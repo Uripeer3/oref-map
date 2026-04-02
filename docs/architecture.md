@@ -6,7 +6,8 @@ A static single-page web app showing live Pikud HaOref (Home Front Command) aler
 
 Note: the live visitor counter is separate from the Oref proxy path. It is served by
 the dedicated `presence-worker/` Worker at `https://presence.oref-map.org/presence`
-and uses a Durable Object to count sessions seen in the last hour.
+and uses a Durable Object to count sessions seen in the last hour. The client sends
+one heartbeat on page load and then every 10 minutes for the rest of the session.
 
 ## Stack
 
