@@ -1123,13 +1123,30 @@ body.idle #right-panel {
   var userLocationMarker = null;
   var currentUserLatLng = null;
   var requestUserLocation = function(cb) { if (cb) cb(false); };
+  var STORED_POSITION_COOKIE = 'oref-stored-my-position';
 
-  function getUrlPosition() {
-    var raw = new URLSearchParams(window.location.search).get('myPosition');
+  function parsePositionValue(raw) {
     if (!raw) return null;
     var parts = raw.split(',').map(function(part) { return Number(part.trim()); });
     if (parts.length !== 2 || parts.some(function(n) { return Number.isNaN(n); })) return null;
     return [parts[0], parts[1]];
+  }
+
+  function getUrlPosition() {
+    return parsePositionValue(new URLSearchParams(window.location.search).get('myPosition'));
+  }
+
+  function getStoredPosition() {
+    var match = document.cookie.match(new RegExp('(?:^|; )' + STORED_POSITION_COOKIE + '=([^;]*)'));
+    if (!match) return null;
+    return parsePositionValue(decodeURIComponent(match[1]));
+  }
+
+  function storePositionCookie(latlng) {
+    if (!FF['store-my-position'] || !latlng) return;
+    var expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+    document.cookie = STORED_POSITION_COOKIE + '=' + encodeURIComponent(latlng[0] + ',' + latlng[1]) +
+      '; expires=' + expires.toUTCString() + '; path=/; SameSite=Lax';
   }
 
   function getCurrentUserPosition() {
@@ -1142,7 +1159,8 @@ body.idle #right-panel {
     var menuGps = document.getElementById('menu-gps');
     var gpsLabel = menuGps.querySelector('.menu-item-label');
     var urlPos = getUrlPosition();
-    if (!navigator.geolocation && !urlPos) { menuGps.style.display = 'none'; return; }
+    var storedPos = getStoredPosition();
+    if (!navigator.geolocation && !urlPos && !storedPos) { menuGps.style.display = 'none'; return; }
     var LOCATION_PREF_KEY = 'oref-show-user-location';
     var LOCATION_HIDDEN_KEY = 'oref-location-hidden';
 
@@ -1235,6 +1253,14 @@ body.idle #right-panel {
       return true;
     }
 
+    function showStoredPositionFallback() {
+      var fallback = getStoredPosition();
+      if (!fallback) return false;
+      if (!showUserLocation(fallback)) return false;
+      showToast('נעשה שימוש במיקום שמור');
+      return true;
+    }
+
     function startWatching() {
       if (!navigator.geolocation) return false;
       if (watchId !== null) return;
@@ -1242,10 +1268,14 @@ body.idle #right-panel {
         var latlng = [pos.coords.latitude, pos.coords.longitude];
         if (!showUserLocation(latlng)) {
           stopWatching();
+          showStoredPositionFallback();
+          return;
         }
+        storePositionCookie(latlng);
       }, function(err) {
         console.warn('Geolocation error:', err.code, err.message);
         if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+        if (showStoredPositionFallback()) return;
         setTransient('מיקום לא זמין');
       }, { enableHighAccuracy: false, maximumAge: 30000 });
       return true;
@@ -1261,6 +1291,11 @@ body.idle #right-panel {
         return;
       }
       if (!navigator.geolocation) {
+        if (showStoredPositionFallback()) {
+          saveUserLocationPreference(true);
+          if (cb) cb(true);
+          return;
+        }
         if (cb) cb(false);
         return;
       }
@@ -1269,14 +1304,21 @@ body.idle #right-panel {
       navigator.geolocation.getCurrentPosition(function(pos) {
         var latlng = [pos.coords.latitude, pos.coords.longitude];
         if (!showUserLocation(latlng)) {
+          showStoredPositionFallback();
           if (cb) cb(false);
           return;
         }
+        storePositionCookie(latlng);
         saveUserLocationPreference(true);
         startWatching();
         if (cb) cb(true);
       }, function(err) {
         console.warn('Geolocation error:', err.code, err.message);
+        if (showStoredPositionFallback()) {
+          saveUserLocationPreference(true);
+          if (cb) cb(true);
+          return;
+        }
         setTransient('מיקום לא זמין');
         if (cb) cb(false);
       }, { enableHighAccuracy: false, maximumAge: 30000, timeout: 10000 });
@@ -1285,10 +1327,14 @@ body.idle #right-panel {
     if (shouldRestoreUserLocation()) {
       if (urlPos) {
         showUserLocation(urlPos);
+      } else if (!navigator.geolocation) {
+        showStoredPositionFallback();
       } else if (navigator.permissions) {
         navigator.permissions.query({ name: 'geolocation' }).then(function(result) {
           if (result.state !== 'denied' && shouldRestoreUserLocation()) {
             startWatching();
+          } else if (shouldRestoreUserLocation()) {
+            showStoredPositionFallback();
           }
         }).catch(function() {
           if (shouldRestoreUserLocation()) startWatching();
@@ -1311,6 +1357,14 @@ body.idle #right-panel {
         if (urlPos) {
           saveUserLocationPreference(true);
           showUserLocation(urlPos);
+          return;
+        }
+        if (!navigator.geolocation) {
+          if (showStoredPositionFallback()) {
+            saveUserLocationPreference(true);
+            return;
+          }
+          setTransient('מיקום לא זמין');
           return;
         }
         if (transientTimeout) { clearTimeout(transientTimeout); transientTimeout = null; }
