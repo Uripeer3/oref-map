@@ -1091,9 +1091,9 @@ body.idle #right-panel {
 
   // Periodically reset proxy so client can re-check if direct /api works
   setInterval(resetProxy, 300000); // 5 min
-  if (presenceEnabled && PRESENCE_URL) {
+  if (PRESENCE_URL) {
     sendPresenceHeartbeat();
-    presenceIntervalId = setInterval(sendPresenceHeartbeat, PRESENCE_POLL_MS);
+    setInterval(sendPresenceHeartbeat, PRESENCE_POLL_MS);
   }
   var LIVE_POLL_MS = 1000;
   var HISTORY_POLL_MS = 10000;
