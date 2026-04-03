@@ -1329,6 +1329,9 @@ body.idle #right-panel {
     if (shouldRestoreUserLocation()) {
       if (urlPos) {
         showUserLocation(urlPos);
+      } else if (storedPos) {
+        showStoredPositionFallback();
+        if (navigator.geolocation) startWatching();
       } else if (!navigator.geolocation) {
         showStoredPositionFallback();
       } else if (navigator.permissions) {
@@ -1359,6 +1362,12 @@ body.idle #right-panel {
         if (urlPos) {
           saveUserLocationPreference(true);
           showUserLocation(urlPos);
+          return;
+        }
+        if (storedPos) {
+          saveUserLocationPreference(true);
+          showStoredPositionFallback();
+          if (navigator.geolocation) startWatching();
           return;
         }
         if (!navigator.geolocation) {
