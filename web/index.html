@@ -173,6 +173,27 @@ body.has-overlay .leaflet-interactive { pointer-events: none !important; }
 .modal-content h2 { margin: 0 0 12px; font-size: 20px; }
 .modal-content p { margin: 0 0 10px; color: #444; }
 .modal-content a { color: #0066cc; }
+#about-visitors-stat {
+  display: none;
+  margin: 14px 0 0;
+  background: #f0f4fa;
+  border-radius: 10px;
+  padding: 12px 16px;
+  text-align: center;
+}
+#about-visitors-stat .stat-number {
+  display: block;
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a56db;
+  line-height: 1.2;
+}
+#about-visitors-stat .stat-label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-top: 2px;
+}
 
 .modal-close {
   position: absolute;
@@ -710,10 +731,15 @@ body.idle #right-panel {
     <button id="about-close" class="modal-close">&times;</button>
     <h2>אודות מפת העורף</h2>
     <p>הצגת אזורי ההתרעות של פיקוד העורף על גבי מפה בזמן אמת.</p>
+    <p>נוצר על ידי מאור קונפורטי והקהילה. תרומות לפרויקט יתקבלו בברכה.</p>
     <p>מקור הנתונים: ממשק ה-API הציבורי של פיקוד העורף.</p>
     <p>אין להסתמך על המידע והתכנים המוצגים באתר זה, ובכל מקרה יש לנהוג בהתאם להנחיות פיקוד העורף.</p>
     <p>קוד המקור של פרויקט זה זמין ב-<a href="https://github.com/maorcc/oref-map" target="_blank" rel="noopener">GitHub</a>.</p>
     <p>נתקלתם בבעיה או יש לכם הצעה? <a href="https://github.com/maorcc/oref-map/issues/new" target="_blank" rel="noopener">פתחו קריאה ב-GitHub</a>.</p>
+    <div id="about-visitors-stat">
+      <span class="stat-number"></span>
+      <span class="stat-label">מבקרים ב-24 השעות האחרונות</span>
+    </div>
   </div>
 </div>
 
@@ -913,11 +939,16 @@ body.idle #right-panel {
     visitorCountEl.style.display = 'block';
   }
 
+  var lastVisitors24h = null;
+
   function fetchAnalytics() {
     return fetch(ANALYTICS_URL).then(function(resp) {
       if (!resp.ok) throw new Error('analytics request failed');
       return resp.json();
     }).then(function(data) {
+      if (data && typeof data.visitors_24h === 'number') {
+        lastVisitors24h = data.visitors_24h;
+      }
       if (visitorsEnabled && data && typeof data.visitors_1h === 'number') {
         renderVisitorCount(data.visitors_1h);
       }
@@ -3392,6 +3423,11 @@ body.idle #right-panel {
 
   // --- About control ---
   function openAbout() {
+    var statEl = document.getElementById('about-visitors-stat');
+    if (statEl && lastVisitors24h !== null) {
+      statEl.querySelector('.stat-number').textContent = lastVisitors24h.toLocaleString('he-IL');
+      statEl.style.display = 'block';
+    }
     document.getElementById('about-backdrop').classList.add('visible');
   }
   function closeAbout() {
