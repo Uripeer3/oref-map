@@ -1010,15 +1010,29 @@ body.idle #right-panel {
     var LOCATION_PREF_KEY = 'oref-show-user-location';
     var LOCATION_HIDDEN_KEY = 'oref-location-hidden';
 
-    var icon = L.divIcon({
+    var userLocationDotIcon = L.divIcon({
       html: '<span style="display:block;width:14px;height:14px;background:#4285F4;border:3px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(66,133,244,0.6);"></span>',
       className: '',
       iconSize: [20, 20],
       iconAnchor: [10, 10]
     });
+    var userLocationCarIcon = L.divIcon({
+      html: '<span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;font-size:16px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));">🚗</span>',
+      className: '',
+      iconSize: [22, 22],
+      iconAnchor: [11, 11]
+    });
 
     var watchId = null;
     var transientTimeout = null;
+
+    function getUserLocationIcon() {
+      return drivingModeFeatureEnabled ? userLocationCarIcon : userLocationDotIcon;
+    }
+
+    function refreshUserLocationMarkerIcon() {
+      if (userLocationMarker) userLocationMarker.setIcon(getUserLocationIcon());
+    }
 
     function shouldRestoreUserLocation() {
       try {
@@ -1070,13 +1084,14 @@ body.idle #right-panel {
       }
       if (!userLocationMarker) {
         userLocationMarker = L.marker(latlng, {
-          icon: icon,
+          icon: getUserLocationIcon(),
           interactive: false,
           zIndexOffset: 1000
         }).addTo(map);
         showToast('מראה מיקום על המפה');
       } else {
         userLocationMarker.setLatLng(latlng);
+        refreshUserLocationMarkerIcon();
       }
       currentUserLatLng = { lat: latlng[0], lng: latlng[1] };
       setActive();
@@ -1406,6 +1421,7 @@ body.idle #right-panel {
       }
       persistZoomPreferences();
       updateZoomMenuState();
+      refreshUserLocationMarkerIcon();
       showToast(drivingModeFeatureEnabled ? 'מצב נהיגה הופעל' : 'מצב נהיגה כובה');
       applySelectedZoomMode(true);
     });
