@@ -52,13 +52,6 @@ The fallback Worker (for non-TLV users) is deployed separately:
 cd worker && npx wrangler deploy
 ```
 
-The visitor counter is deployed as a separate Worker and exposed at
-`https://presence.oref-map.org/presence`:
-
-```sh
-cd presence-worker && npx wrangler deploy
-```
-
 ## Structure
 
 ```
@@ -70,12 +63,10 @@ functions/
     alerts.js         # proxies live alerts API
     history.js        # proxies history API
     alarms-history.js # proxies extended history API
+    analytics.js      # Cloudflare analytics summary for visitor counts
 worker/
   src/index.js        # fallback proxy for non-TLV users (placement: azure:israelcentral)
   wrangler.toml       # Worker config with placement and /api2/* route
-presence-worker/
-  src/index.js        # dedicated visitor counter Worker with Durable Object state
-  wrangler.toml       # Worker config for presence.oref-map.org/presence
 ```
 
 ## Contributing
