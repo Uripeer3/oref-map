@@ -881,9 +881,8 @@
       return Math.round(angleDegrees * 10) / 10;
     }
 
-    function formatRoundedKilometers(meters) {
-      var kilometers = Math.round(meters / 1000);
-      return kilometers.toLocaleString('en-US') + ' km';
+    function formatMeters(meters) {
+      return Math.round(meters).toLocaleString('en-US') + ' m';
     }
 
     function formatCenterPoint(lat, lng) {
@@ -898,8 +897,8 @@
         return {
           locationCount: summary.locationCount,
           center: formatCenterPoint(geometry.center.lat, geometry.center.lng),
-          majorAxisLengthKm: formatRoundedKilometers(geometry.radiusMeters * 2),
-          minorAxisLengthKm: formatRoundedKilometers(geometry.radiusMeters * 2),
+          majorAxisLength: formatMeters(geometry.radiusMeters * 2),
+          minorAxisLength: formatMeters(geometry.radiusMeters * 2),
           angleWithHorizonDegrees: 0.0
         };
       }
@@ -907,8 +906,8 @@
       return {
         locationCount: summary.locationCount,
         center: formatCenterPoint(geometry.center.lat, geometry.center.lng),
-        majorAxisLengthKm: formatRoundedKilometers(geometry.semiMajor * 2),
-        minorAxisLengthKm: formatRoundedKilometers(geometry.semiMinor * 2),
+        majorAxisLength: formatMeters(geometry.semiMajor * 2),
+        minorAxisLength: formatMeters(geometry.semiMinor * 2),
         angleWithHorizonDegrees: normalizeHorizonAngleDegrees(
           -(Math.atan2(geometry.majorAxis.y, geometry.majorAxis.x) * 180 / Math.PI)
         )
