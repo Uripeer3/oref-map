@@ -899,7 +899,7 @@
           center: formatCenterPoint(geometry.center.lat, geometry.center.lng),
           majorAxisLength: formatMeters(geometry.radiusMeters * 2),
           minorAxisLength: formatMeters(geometry.radiusMeters * 2),
-          angleWithHorizonDegrees: 0.0
+          majorAxisHorizontalAngle: '0.0°'
         };
       }
 
@@ -908,9 +908,10 @@
         center: formatCenterPoint(geometry.center.lat, geometry.center.lng),
         majorAxisLength: formatMeters(geometry.semiMajor * 2),
         minorAxisLength: formatMeters(geometry.semiMinor * 2),
-        angleWithHorizonDegrees: normalizeHorizonAngleDegrees(
-          Math.atan2(geometry.majorAxis.y, geometry.majorAxis.x) * 180 / Math.PI
-        )
+        majorAxisHorizontalAngle:
+          normalizeHorizonAngleDegrees(
+            Math.atan2(geometry.majorAxis.y, geometry.majorAxis.x) * 180 / Math.PI
+          ).toFixed(1) + '\u00B0'
       };
     }
 
