@@ -2358,7 +2358,7 @@ body.idle #right-panel {
     processLiveAlert(mockAlert);
   };
 
-  window.printActiveAlertLocations = function() {
+  window.printAlertAllLocations = function() {
     var active = [];
     for (var name in locationStates) {
       if (locationStates[name] && locationStates[name].state !== 'green') {

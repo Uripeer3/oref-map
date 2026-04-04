@@ -875,6 +875,65 @@
       };
     }
 
+    function normalizeHorizonAngleDegrees(angleDegrees) {
+      while (angleDegrees > 90) angleDegrees -= 180;
+      while (angleDegrees <= -90) angleDegrees += 180;
+      return Math.abs(angleDegrees);
+    }
+
+    function buildEllipseInfoEntry(summary) {
+      if (!summary || !summary.sourceGeometry) return null;
+
+      var geometry = summary.sourceGeometry;
+      if (geometry.type === 'circle') {
+        return {
+          label: summary.label,
+          locationCount: summary.locationCount,
+          center: {
+            lat: geometry.center.lat,
+            lng: geometry.center.lng
+          },
+          majorAxisLengthMeters: geometry.radiusMeters * 2,
+          minorAxisLengthMeters: geometry.radiusMeters * 2,
+          angleWithHorizonDegrees: 0
+        };
+      }
+
+      return {
+        label: summary.label,
+        locationCount: summary.locationCount,
+        center: {
+          lat: geometry.center.lat,
+          lng: geometry.center.lng
+        },
+        majorAxisLengthMeters: geometry.semiMajor * 2,
+        minorAxisLengthMeters: geometry.semiMinor * 2,
+        angleWithHorizonDegrees: normalizeHorizonAngleDegrees(
+          Math.atan2(geometry.majorAxis.y, geometry.majorAxis.x) * 180 / Math.PI
+        )
+      };
+    }
+
+    function printEllipsesInfos() {
+      if (!enabled) {
+        console.log('Ellipse mode is disabled, so there are no displayed ellipses.');
+        return Promise.resolve([]);
+      }
+
+      var redAlerts = getDisplayedRedAlerts();
+      if (!redAlerts.length) {
+        console.log('No red alerts are currently displayed.');
+        return Promise.resolve([]);
+      }
+
+      return ensureOrefPoints().then(function(pointsMap) {
+        var summaries = buildBaseClusterGeometrySummaries(redAlerts, pointsMap);
+        var infos = summaries.map(buildEllipseInfoEntry).filter(Boolean);
+        console.log(JSON.stringify(infos, null, 2));
+        return infos;
+      });
+    }
+
     function populateSelectedClusterProbability(clusterReport, userLatLng) {
       var probabilityMetrics = getHomeAreaProbability(
         clusterReport.sourceGeometry,
@@ -1049,6 +1108,7 @@
       refreshExtendedVisual: refreshExtendedVisual,
       clearExtendedVisual: clearExtendedVisual,
       buildUserEllipseAnalysis: buildUserEllipseAnalysis,
+      printEllipsesInfos: printEllipsesInfos,
       isEnabled: function() { return enabled; }
     };
   }
@@ -1088,6 +1148,10 @@
       }
       return controller.setEnabled(on, opts || {});
     }
+
+    window.printElippsesInfos = function() {
+      return controller.printEllipsesInfos();
+    };
 
     // Wire enable button: toggle on/off
     var enableBtn = document.getElementById('ellipse-enable-btn');
