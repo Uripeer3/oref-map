@@ -878,7 +878,16 @@
     function normalizeHorizonAngleDegrees(angleDegrees) {
       while (angleDegrees > 90) angleDegrees -= 180;
       while (angleDegrees <= -90) angleDegrees += 180;
-      return Math.abs(angleDegrees);
+      return Math.round(angleDegrees * 10) / 10;
+    }
+
+    function formatRoundedKilometers(meters) {
+      var kilometers = Math.round(meters / 1000);
+      return kilometers.toLocaleString('en-US') + ' km';
+    }
+
+    function formatCenterPoint(lat, lng) {
+      return '(' + lat.toFixed(3) + ', ' + lng.toFixed(3) + ')';
     }
 
     function buildEllipseInfoEntry(summary) {
@@ -887,29 +896,21 @@
       var geometry = summary.sourceGeometry;
       if (geometry.type === 'circle') {
         return {
-          label: summary.label,
           locationCount: summary.locationCount,
-          center: {
-            lat: geometry.center.lat,
-            lng: geometry.center.lng
-          },
-          majorAxisLengthMeters: geometry.radiusMeters * 2,
-          minorAxisLengthMeters: geometry.radiusMeters * 2,
-          angleWithHorizonDegrees: 0
+          center: formatCenterPoint(geometry.center.lat, geometry.center.lng),
+          majorAxisLengthKm: formatRoundedKilometers(geometry.radiusMeters * 2),
+          minorAxisLengthKm: formatRoundedKilometers(geometry.radiusMeters * 2),
+          angleWithHorizonDegrees: 0.0
         };
       }
 
       return {
-        label: summary.label,
         locationCount: summary.locationCount,
-        center: {
-          lat: geometry.center.lat,
-          lng: geometry.center.lng
-        },
-        majorAxisLengthMeters: geometry.semiMajor * 2,
-        minorAxisLengthMeters: geometry.semiMinor * 2,
+        center: formatCenterPoint(geometry.center.lat, geometry.center.lng),
+        majorAxisLengthKm: formatRoundedKilometers(geometry.semiMajor * 2),
+        minorAxisLengthKm: formatRoundedKilometers(geometry.semiMinor * 2),
         angleWithHorizonDegrees: normalizeHorizonAngleDegrees(
-          Math.atan2(geometry.majorAxis.y, geometry.majorAxis.x) * 180 / Math.PI
+          -(Math.atan2(geometry.majorAxis.y, geometry.majorAxis.x) * 180 / Math.PI)
         )
       };
     }
