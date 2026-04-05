@@ -37,7 +37,7 @@ cd worker && npx wrangler deploy   # deploy API proxy Worker
 
 ## Feature flags
 
-Beta/debug features are gated behind URL parameters with an `f-` prefix (e.g. `?f-log&f-ellipse`). On page load, a single block of JS parses all `f-*` params and:
+Beta/debug features are gated behind URL parameters with an `f-` prefix (e.g. `?f-log`). On page load, a single block of JS parses all `f-*` params and:
 
 1. Populates `window.FF` — a global dict keyed by flag name (e.g. `FF.ellipse`). Boolean flags store `true`; value-carrying flags (e.g. `?f-debugapi=host`) store the string value.
 2. Adds a CSS class `f-<name>` to `<body>` — enabling pure-CSS gating.
