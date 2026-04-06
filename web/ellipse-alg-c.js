@@ -3,7 +3,7 @@ const ALG_C_DEFAULT_OPTIONS = {
   clusterMinSamples: 10,
   alpha: 0.1,
   useAlphaShape: true,
-  useOpenCv: false,
+  useOpenCv: true,
   boundaryThresholdDegrees: 0.03,
   coastMinDistanceMeters: 4000,
   minBoundaryPoints: 6,
@@ -641,14 +641,17 @@ function measureRawDegreeEllipseAxesMeters(candidate) {
 }
 
 async function fitAlgC(alertedPoints, options) {
+  const debugLogging = options.logSteps === true;
   const projection = buildProjection(alertedPoints);
   const projectedPoints = alertedPoints.map((point) => ({
     ...projection.project(point),
     source: point,
   }));
 
+  if (debugLogging) console.log('calcEllipseAlgC: detect main cluster');
   const clusteredPoints = detectMainCluster(projectedPoints, options);
   if (clusteredPoints.length < options.minBoundaryPoints) {
+    if (debugLogging) console.log('calcEllipseAlgC: too few clustered points for boundary stage');
     return {
       projection,
       clusteredPoints,
@@ -665,24 +668,33 @@ async function fitAlgC(alertedPoints, options) {
     };
   }
 
+  if (debugLogging) console.log('calcEllipseAlgC: build convex hull');
   let boundaryPoints = buildConvexHull(clusteredPoints);
   if (options.useAlphaShape !== false) {
     try {
+      if (debugLogging) console.log('calcEllipseAlgC: load alpha-shape');
       const alphaShape = await ensureAlphaShape();
       const alphaInputPoints = clusteredPoints.map((point) => [point.source.lng, point.source.lat]);
+      if (debugLogging) console.log('calcEllipseAlgC: run alpha-shape', { pointCount: alphaInputPoints.length });
       const edges = alphaShape(options.alpha, alphaInputPoints)
         .filter((edge) => Array.isArray(edge) && edge.length === 2);
+      if (debugLogging) console.log('calcEllipseAlgC: alpha-shape complete', { edgeCount: edges.length });
       boundaryPoints = buildAlphaShapeBoundaryPoints(clusteredPoints, edges, options);
     } catch (error) {
       console.warn('calcEllipseAlgC: alpha-shape load failed; using convex hull boundary', error);
     }
+  } else if (debugLogging) {
+    console.log('calcEllipseAlgC: alpha-shape disabled; using convex hull boundary');
   }
 
+  if (debugLogging) console.log('calcEllipseAlgC: load coastline');
   const coastline = await ensureCoastline();
+  if (debugLogging) console.log('calcEllipseAlgC: filter coastline points');
   const coastFilter = filterPointsAwayFromCoast(boundaryPoints, coastline, projection, options);
   const filteredBoundaryPoints = coastFilter.filtered.length >= options.minBoundaryPoints
     ? coastFilter.filtered
     : boundaryPoints;
+  if (debugLogging) console.log('calcEllipseAlgC: fit boundary ellipse', { boundaryPointCount: filteredBoundaryPoints.length });
   const candidate = await fitOpenCvEllipseFromBoundary(filteredBoundaryPoints, options);
   const usableDistances = coastFilter.minDistances.filter(Number.isFinite);
 
@@ -843,10 +855,12 @@ function drawDebugOverlay(renderable, result, alertedPoints, options) {
 }
 
 export async function calcEllipseAlgC(options = {}) {
+  const debugLogging = options.logSteps === true;
   const mergedOptions = {
     ...ALG_C_DEFAULT_OPTIONS,
     ...(options.algCOptions || {}),
   };
+  mergedOptions.logSteps = debugLogging;
 
   const locationNames = Array.isArray(options.locations) && options.locations.length
     ? options.locations.map((value) => String(value))
@@ -856,12 +870,17 @@ export async function calcEllipseAlgC(options = {}) {
     throw new Error('calcEllipseAlgC: no red alert locations are currently active');
   }
 
+  if (debugLogging) console.log('calcEllipseAlgC: loading oref points');
   const pointsMap = await ensureOrefPoints();
+  if (debugLogging) console.log('calcEllipseAlgC: resolving alerted points');
   const resolved = resolveAlertedPoints(locationNames, pointsMap);
+  if (debugLogging) console.log('calcEllipseAlgC: fitting ellipse', { alertedPointCount: resolved.points.length });
   const result = await fitAlgC(resolved.points, mergedOptions);
+  if (debugLogging) console.log('calcEllipseAlgC: building geometry');
   const renderable = buildRenderableGeometry(result);
 
   if (options.draw !== false) {
+    if (debugLogging) console.log('calcEllipseAlgC: drawing overlay');
     drawDebugOverlay(renderable, result, resolved.points, options);
   }
 
