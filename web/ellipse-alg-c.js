@@ -2,6 +2,8 @@ const ALG_C_DEFAULT_OPTIONS = {
   clusterEpsMeters: 10000,
   clusterMinSamples: 10,
   alpha: 0.1,
+  useAlphaShape: true,
+  useOpenCv: false,
   boundaryThresholdDegrees: 0.03,
   coastMinDistanceMeters: 4000,
   minBoundaryPoints: 6,
@@ -15,6 +17,7 @@ const ALG_C_DEFAULT_OPTIONS = {
 const ALPHA_SHAPE_MODULE_URL = 'https://esm.sh/alpha-shape@1.0.0?target=es2022';
 const OPENCV_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.12.0-release.1/dist/opencv.js';
 const COASTLINE_PATH = '/israel_mediterranean_coast_0.5km.csv';
+const MODULE_LOAD_TIMEOUT_MS = 12000;
 
 let orefPointsPromise = null;
 let coastlinePromise = null;
@@ -207,10 +210,18 @@ function detectMainCluster(projectedPoints, options) {
 
 async function ensureOrefPoints() {
   if (!orefPointsPromise) {
-    orefPointsPromise = fetch('/oref_points.json')
+    orefPointsPromise = withTimeout(
+      fetch('/oref_points.json'),
+      MODULE_LOAD_TIMEOUT_MS,
+      'Timed out loading /oref_points.json',
+    )
       .then((resp) => {
         if (!resp.ok) throw new Error('Failed to load /oref_points.json: HTTP ' + resp.status);
         return resp.json();
+      })
+      .catch((error) => {
+        orefPointsPromise = null;
+        throw error;
       });
   }
   return orefPointsPromise;
@@ -220,7 +231,11 @@ async function ensureCoastline() {
   if (!coastlinePromise) {
     coastlinePromise = (async function() {
       try {
-        const resp = await fetch(COASTLINE_PATH);
+        const resp = await withTimeout(
+          fetch(COASTLINE_PATH),
+          MODULE_LOAD_TIMEOUT_MS,
+          'Timed out loading coastline data',
+        );
         if (!resp.ok) {
           throw new Error('HTTP ' + resp.status);
         }
@@ -242,9 +257,35 @@ async function ensureCoastline() {
   return coastlinePromise;
 }
 
+function withTimeout(promise, timeoutMs, message) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 async function ensureAlphaShape() {
   if (!alphaShapePromise) {
-    alphaShapePromise = import(ALPHA_SHAPE_MODULE_URL).then((mod) => mod.default || mod);
+    alphaShapePromise = withTimeout(
+      import(ALPHA_SHAPE_MODULE_URL).then((mod) => mod.default || mod),
+      MODULE_LOAD_TIMEOUT_MS,
+      'Timed out loading alpha-shape module',
+    ).catch((error) => {
+      alphaShapePromise = null;
+      throw error;
+    });
   }
   return alphaShapePromise;
 }
@@ -327,10 +368,18 @@ async function ensureCv() {
       }
 
       if (!window.cv) {
-        await loadScriptOnce(OPENCV_SCRIPT_URL, 'data-opencv-js-loader');
+        await withTimeout(
+          loadScriptOnce(OPENCV_SCRIPT_URL, 'data-opencv-js-loader'),
+          MODULE_LOAD_TIMEOUT_MS,
+          'Timed out loading OpenCV script',
+        );
       }
 
-      return resolveCvModuleShape(window.cv);
+      return withTimeout(
+        resolveCvModuleShape(window.cv),
+        MODULE_LOAD_TIMEOUT_MS,
+        'Timed out initializing OpenCV',
+      );
     })().catch((error) => {
       cvPromise = null;
       throw error;
@@ -458,6 +507,19 @@ async function fitOpenCvEllipseFromBoundary(projectedPoints, options) {
     const approx = fitProjectedEllipseFromBoundaryApprox(projectedPoints, options);
     return {
       fitSource: 'approx',
+      coordinateSpace: 'projected',
+      centerX: approx.centerX,
+      centerY: approx.centerY,
+      semiMajor: approx.semiMajor,
+      semiMinor: approx.semiMinor,
+      angle: approx.angle,
+    };
+  }
+
+  if (options.useOpenCv === false) {
+    const approx = fitProjectedEllipseFromBoundaryApprox(projectedPoints, options);
+    return {
+      fitSource: 'approx-disabled-opencv',
       coordinateSpace: 'projected',
       centerX: approx.centerX,
       centerY: approx.centerY,
@@ -604,14 +666,16 @@ async function fitAlgC(alertedPoints, options) {
   }
 
   let boundaryPoints = buildConvexHull(clusteredPoints);
-  try {
-    const alphaShape = await ensureAlphaShape();
-    const alphaInputPoints = clusteredPoints.map((point) => [point.source.lng, point.source.lat]);
-    const edges = alphaShape(options.alpha, alphaInputPoints)
-      .filter((edge) => Array.isArray(edge) && edge.length === 2);
-    boundaryPoints = buildAlphaShapeBoundaryPoints(clusteredPoints, edges, options);
-  } catch (error) {
-    console.warn('calcEllipseAlgC: alpha-shape load failed; using convex hull boundary', error);
+  if (options.useAlphaShape !== false) {
+    try {
+      const alphaShape = await ensureAlphaShape();
+      const alphaInputPoints = clusteredPoints.map((point) => [point.source.lng, point.source.lat]);
+      const edges = alphaShape(options.alpha, alphaInputPoints)
+        .filter((edge) => Array.isArray(edge) && edge.length === 2);
+      boundaryPoints = buildAlphaShapeBoundaryPoints(clusteredPoints, edges, options);
+    } catch (error) {
+      console.warn('calcEllipseAlgC: alpha-shape load failed; using convex hull boundary', error);
+    }
   }
 
   const coastline = await ensureCoastline();
