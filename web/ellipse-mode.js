@@ -1705,6 +1705,10 @@
     window.editEllipse = function() {
       return controller.startEllipseEditing();
     };
+    window.calcEllipseAlgC = async function(options) {
+      var mod = await import('/ellipse-alg-c.js');
+      return mod.calcEllipseAlgC(options || {});
+    };
 
     // Wire enable button: toggle on/off
     var enableBtn = document.getElementById('ellipse-enable-btn');

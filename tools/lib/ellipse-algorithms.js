@@ -1,4 +1,15 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
+import alphaShape from 'alpha-shape';
+
 const EARTH_RADIUS_METERS = 6378137;
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ROOT_DIR = path.resolve(__dirname, '..', '..');
+const ALG_C_COAST_PATH = path.join(ROOT_DIR, 'web', 'israel_mediterranean_coast_0.5km.csv');
 
 const ALG_A_DEFAULT_OPTIONS = {
   marginMajorMeters: 600,
@@ -34,6 +45,20 @@ const ALG_B_SEARCH_CONFIG = {
   refineCenterStepMeters: 250,
   refineCenterWindowMeters: 3000,
   ellipseSamples: 180,
+};
+
+const ALG_C_DEFAULT_OPTIONS = {
+  clusterEpsMeters: 10000,
+  clusterMinSamples: 10,
+  alpha: 0.1,
+  boundaryThresholdDegrees: 0.03,
+  coastMinDistanceMeters: 4000,
+  minBoundaryPoints: 6,
+  minSemiMajorMeters: 450,
+  minSemiMinorMeters: 250,
+  majorPaddingMeters: 350,
+  minorPaddingMeters: 250,
+  minMinorRatio: 0.32,
 };
 
 function degToRad(value) {
@@ -118,6 +143,21 @@ function buildRange(min, max, step) {
   return values;
 }
 
+let algCCoastlineCache = null;
+
+function loadAlgCCoastline() {
+  if (algCCoastlineCache) return algCCoastlineCache;
+
+  const text = fs.readFileSync(ALG_C_COAST_PATH, 'utf8').trim();
+  const lines = text.split(/\r?\n/).slice(1);
+  algCCoastlineCache = lines
+    .map((line) => line.split(','))
+    .map(([lat, lng]) => ({ lat: Number(lat), lng: Number(lng) }))
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+
+  return algCCoastlineCache;
+}
+
 function rotatePoint(point, angleRad) {
   const cos = Math.cos(angleRad);
   const sin = Math.sin(angleRad);
@@ -152,6 +192,284 @@ function getProjectedBounds(points) {
   return { minX, maxX, minY, maxY };
 }
 
+function squaredDistance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return (dx * dx) + (dy * dy);
+}
+
+function cross(o, a, b) {
+  return ((a.x - o.x) * (b.y - o.y)) - ((a.y - o.y) * (b.x - o.x));
+}
+
+function buildConvexHull(points) {
+  if (points.length <= 1) return points.slice();
+
+  const sorted = points.slice().sort((a, b) => (
+    Math.abs(a.x - b.x) > 1e-9 ? a.x - b.x : a.y - b.y
+  ));
+
+  const lower = [];
+  for (const point of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) {
+      lower.pop();
+    }
+    lower.push(point);
+  }
+
+  const upper = [];
+  for (let index = sorted.length - 1; index >= 0; index -= 1) {
+    const point = sorted[index];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) {
+      upper.pop();
+    }
+    upper.push(point);
+  }
+
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function pointToSegmentDistance(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = (dx * dx) + (dy * dy);
+  if (lengthSquared <= 1e-12) return Math.sqrt(squaredDistance(point, start));
+
+  const t = clamp((((point.x - start.x) * dx) + ((point.y - start.y) * dy)) / lengthSquared, 0, 1);
+  const projected = {
+    x: start.x + (t * dx),
+    y: start.y + (t * dy),
+  };
+  return Math.sqrt(squaredDistance(point, projected));
+}
+
+function detectMainCluster(projectedPoints, options) {
+  if (projectedPoints.length < options.clusterMinSamples) return projectedPoints.slice();
+
+  const epsSquared = options.clusterEpsMeters * options.clusterEpsMeters;
+  const neighbors = projectedPoints.map(() => []);
+
+  for (let i = 0; i < projectedPoints.length; i += 1) {
+    for (let j = i; j < projectedPoints.length; j += 1) {
+      if (squaredDistance(projectedPoints[i], projectedPoints[j]) <= epsSquared) {
+        neighbors[i].push(j);
+        if (i !== j) neighbors[j].push(i);
+      }
+    }
+  }
+
+  const isCore = neighbors.map((list) => list.length >= options.clusterMinSamples);
+  if (!isCore.some(Boolean)) return projectedPoints.slice();
+
+  const visited = new Array(projectedPoints.length).fill(false);
+  let bestCluster = [];
+
+  for (let start = 0; start < projectedPoints.length; start += 1) {
+    if (!isCore[start] || visited[start]) continue;
+
+    const queue = [start];
+    const cluster = new Set();
+    visited[start] = true;
+
+    while (queue.length) {
+      const current = queue.shift();
+      cluster.add(current);
+
+      for (const neighborIndex of neighbors[current]) {
+        cluster.add(neighborIndex);
+        if (isCore[neighborIndex] && !visited[neighborIndex]) {
+          visited[neighborIndex] = true;
+          queue.push(neighborIndex);
+        }
+      }
+    }
+
+    if (cluster.size > bestCluster.length) {
+      bestCluster = Array.from(cluster);
+    }
+  }
+
+  if (!bestCluster.length) return projectedPoints.slice();
+  return bestCluster.map((index) => projectedPoints[index]);
+}
+
+function buildAlphaShapeBoundaryPoints(projectedPoints, options) {
+  if (projectedPoints.length <= options.minBoundaryPoints) return projectedPoints.slice();
+
+  const alphaInputPoints = projectedPoints.map((point) => [point.source.lng, point.source.lat]);
+  const edges = alphaShape(options.alpha, alphaInputPoints)
+    .filter((edge) => Array.isArray(edge) && edge.length === 2);
+
+  if (!edges.length) return buildConvexHull(projectedPoints);
+
+  const boundary = [];
+  for (const point of projectedPoints) {
+    const rawPoint = { x: point.source.lng, y: point.source.lat };
+    let minDistance = Infinity;
+
+    for (const [startIndex, endIndex] of edges) {
+      const start = alphaInputPoints[startIndex];
+      const end = alphaInputPoints[endIndex];
+      if (!start || !end) continue;
+
+      const distance = pointToSegmentDistance(
+        rawPoint,
+        { x: start[0], y: start[1] },
+        { x: end[0], y: end[1] },
+      );
+      if (distance < minDistance) minDistance = distance;
+    }
+
+    if (minDistance < options.boundaryThresholdDegrees) {
+      boundary.push(point);
+    }
+  }
+
+  return boundary.length ? boundary : buildConvexHull(projectedPoints);
+}
+
+function filterPointsAwayFromCoast(projectedPoints, projection, options) {
+  const coastlineProjected = loadAlgCCoastline().map((point) => projection.project(point));
+  const filtered = [];
+  const minDistances = [];
+
+  for (const point of projectedPoints) {
+    let minDistanceSquared = Infinity;
+    for (const coastPoint of coastlineProjected) {
+      const distanceSquared = squaredDistance(point, coastPoint);
+      if (distanceSquared < minDistanceSquared) minDistanceSquared = distanceSquared;
+    }
+    const minDistance = Math.sqrt(minDistanceSquared);
+    minDistances.push(minDistance);
+    if (minDistance > options.coastMinDistanceMeters) filtered.push(point);
+  }
+
+  return { filtered, minDistances };
+}
+
+function fitProjectedEllipseFromBoundaryApprox(projectedPoints, options) {
+  let centerX = 0;
+  let centerY = 0;
+  for (const point of projectedPoints) {
+    centerX += point.x;
+    centerY += point.y;
+  }
+  centerX /= projectedPoints.length;
+  centerY /= projectedPoints.length;
+
+  let covXX = 0;
+  let covXY = 0;
+  let covYY = 0;
+  for (const point of projectedPoints) {
+    const dx = point.x - centerX;
+    const dy = point.y - centerY;
+    covXX += dx * dx;
+    covXY += dx * dy;
+    covYY += dy * dy;
+  }
+
+  const angle = 0.5 * Math.atan2(2 * covXY, covXX - covYY);
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+
+  let minU = Infinity;
+  let maxU = -Infinity;
+  let minV = Infinity;
+  let maxV = -Infinity;
+  for (const point of projectedPoints) {
+    const dx = point.x - centerX;
+    const dy = point.y - centerY;
+    const u = dx * cos + dy * sin;
+    const v = -dx * sin + dy * cos;
+    if (u < minU) minU = u;
+    if (u > maxU) maxU = u;
+    if (v < minV) minV = v;
+    if (v > maxV) maxV = v;
+  }
+
+  const offsetU = (minU + maxU) / 2;
+  const offsetV = (minV + maxV) / 2;
+  let semiMajor = Math.max((maxU - minU) / 2, options.minSemiMajorMeters);
+  let semiMinor = Math.max((maxV - minV) / 2, options.minSemiMinorMeters);
+  semiMajor += options.majorPaddingMeters;
+  semiMinor = Math.max(semiMinor + options.minorPaddingMeters, semiMajor * options.minMinorRatio);
+
+  return normalizeAxes({
+    centerX: centerX + (offsetU * cos) - (offsetV * sin),
+    centerY: centerY + (offsetU * sin) + (offsetV * cos),
+    semiMajor,
+    semiMinor,
+    angle,
+  });
+}
+
+async function fitOpenCvEllipseFromBoundary(projectedPoints, options) {
+  if (projectedPoints.length < 5 || projectedPoints.some((point) => !point.source)) {
+    const approx = fitProjectedEllipseFromBoundaryApprox(projectedPoints, options);
+    return {
+      coordinateSpace: 'projected',
+      centerX: approx.centerX,
+      centerY: approx.centerY,
+      semiMajor: approx.semiMajor,
+      semiMinor: approx.semiMinor,
+      angle: approx.angle,
+    };
+  }
+
+  const rawPoints = projectedPoints.map((point) => [point.source.lng, point.source.lat]);
+  const script = `
+import fs from 'node:fs';
+import cvModule from '@techstark/opencv-js';
+
+const points = JSON.parse(fs.readFileSync(0, 'utf8') || '[]');
+let cv;
+if (cvModule && typeof cvModule.fitEllipse === 'function' && typeof cvModule.Mat === 'function') {
+  cv = cvModule;
+} else if (cvModule instanceof Promise) {
+  cv = await cvModule;
+} else {
+  await new Promise((resolve) => { cvModule.onRuntimeInitialized = () => resolve(); });
+  cv = cvModule;
+}
+
+const data = new Float32Array(points.length * 2);
+for (let i = 0; i < points.length; i += 1) {
+  data[i * 2] = points[i][0];
+  data[(i * 2) + 1] = points[i][1];
+}
+
+const mat = cv.matFromArray(points.length, 1, cv.CV_32FC2, data);
+const ellipse = cv.fitEllipse(mat);
+mat.delete();
+console.log(JSON.stringify(ellipse));
+process.exit(0);
+`;
+
+  const stdout = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: ROOT_DIR,
+    input: JSON.stringify(rawPoints),
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+  });
+  const ellipse = JSON.parse(stdout.trim());
+
+  return {
+    coordinateSpace: 'raw-degrees',
+    centerLng: ellipse.center.x,
+    centerLat: ellipse.center.y,
+    widthDegrees: ellipse.size.width,
+    heightDegrees: ellipse.size.height,
+    angleDegrees: ellipse.angle,
+    angle: degToRad(ellipse.angle),
+  };
+}
+
 function buildEllipseCandidateLatLngs(candidate, projection, sampleCount = 180) {
   const points = [];
   const cos = Math.cos(candidate.angle);
@@ -164,6 +482,23 @@ function buildEllipseCandidateLatLngs(candidate, projection, sampleCount = 180) 
     const x = candidate.centerX + u * cos - v * sin;
     const y = candidate.centerY + u * sin + v * cos;
     points.push(projection.unproject({ x, y }));
+  }
+
+  return points;
+}
+
+function buildMercatorEllipseLatLngs(candidate, sampleCount = 180) {
+  const points = [];
+  const cos = Math.cos(candidate.angle);
+  const sin = Math.sin(candidate.angle);
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const theta = (Math.PI * 2 * index) / sampleCount;
+    const u = Math.cos(theta) * candidate.semiMajor;
+    const v = Math.sin(theta) * candidate.semiMinor;
+    const x = candidate.centerX + u * cos - v * sin;
+    const y = candidate.centerY + u * sin + v * cos;
+    points.push(unprojectEllipsePoint({ x, y }));
   }
 
   return points;
@@ -614,14 +949,66 @@ function fitFixedLeftmostEllipse(alertedPoints) {
   };
 }
 
+async function fitAlgC(alertedPoints, options = ALG_C_DEFAULT_OPTIONS) {
+  const projection = buildProjection(alertedPoints);
+  const projectedPoints = alertedPoints.map((point) => ({
+    ...projection.project(point),
+    source: point,
+  }));
+
+  const clusteredPoints = detectMainCluster(projectedPoints, options);
+  if (clusteredPoints.length < options.minBoundaryPoints) {
+    return {
+      projection,
+      clusteredPoints,
+      boundaryPoints: clusteredPoints,
+      filteredBoundaryPoints: clusteredPoints,
+      candidate: await fitOpenCvEllipseFromBoundary(clusteredPoints, options),
+      metrics: {
+        clusteredCount: clusteredPoints.length,
+        boundaryCount: clusteredPoints.length,
+        filteredBoundaryCount: clusteredPoints.length,
+        coastRejectedCount: 0,
+        minCoastDistanceMeters: null,
+      },
+    };
+  }
+
+  const boundaryPoints = buildAlphaShapeBoundaryPoints(clusteredPoints, options);
+  const coastFilter = filterPointsAwayFromCoast(boundaryPoints, projection, options);
+  const filteredBoundaryPoints = coastFilter.filtered.length >= options.minBoundaryPoints
+    ? coastFilter.filtered
+    : boundaryPoints;
+  const candidate = await fitOpenCvEllipseFromBoundary(filteredBoundaryPoints, options);
+  const usableDistances = coastFilter.minDistances.filter(Number.isFinite);
+
+  return {
+    projection,
+    clusteredPoints,
+    boundaryPoints,
+    filteredBoundaryPoints,
+    candidate,
+    metrics: {
+      clusteredCount: clusteredPoints.length,
+      boundaryCount: boundaryPoints.length,
+      filteredBoundaryCount: filteredBoundaryPoints.length,
+      coastRejectedCount: Math.max(boundaryPoints.length - filteredBoundaryPoints.length, 0),
+      minCoastDistanceMeters: usableDistances.length ? Math.min(...usableDistances) : null,
+    },
+  };
+}
+
 export {
   ALG_A_DEFAULT_OPTIONS,
+  ALG_C_DEFAULT_OPTIONS,
   ALG_B_SEARCH_CONFIG,
   ALG_B_SEMI_MAJOR_METERS,
   ALG_B_SEMI_MINOR_METERS,
   buildEllipseCandidateLatLngs,
   buildEllipseGeometry,
+  buildMercatorEllipseLatLngs,
   buildProjection,
+  fitAlgC,
   fitEllipse,
   fitFixedLeftmostEllipse,
   normalizeAxes,

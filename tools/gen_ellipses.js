@@ -11,7 +11,9 @@ import {
   ALG_B_SEMI_MINOR_METERS,
   buildEllipseCandidateLatLngs,
   buildEllipseGeometry,
+  buildMercatorEllipseLatLngs,
   buildProjection,
+  fitAlgC,
   fitEllipse,
   fitFixedLeftmostEllipse,
   radToDeg,
@@ -101,6 +103,27 @@ function buildRenderableGeometry(result, projection, style) {
     };
   }
 
+  if (result.coordinateSpace === 'raw-degrees') {
+    const latlngs = buildRawDegreeEllipseLatLngs(result.rawCandidate, ALG_B_SEARCH_CONFIG.ellipseSamples);
+    const axisMetrics = measureRawDegreeEllipseAxesMeters(result.rawCandidate);
+    return {
+      type: 'ellipse',
+      center: {
+        lat: result.rawCandidate.centerLat,
+        lng: result.rawCandidate.centerLng,
+      },
+      semiMajorMeters: axisMetrics.semiMajorMeters,
+      semiMinorMeters: axisMetrics.semiMinorMeters,
+      majorAxisLengthMeters: axisMetrics.semiMajorMeters * 2,
+      minorAxisLengthMeters: axisMetrics.semiMinorMeters * 2,
+      angleDeg: axisMetrics.angleDeg,
+      latlngs,
+      style,
+      label: style.label,
+      metrics: result.metrics || null,
+    };
+  }
+
   let candidate;
   if (result.centerProjected) {
     candidate = {
@@ -128,10 +151,68 @@ function buildRenderableGeometry(result, projection, style) {
     majorAxisLengthMeters: result.semiMajor * 2,
     minorAxisLengthMeters: result.semiMinor * 2,
     angleDeg: (radToDeg(result.angle) + 360) % 360,
-    latlngs: buildEllipseCandidateLatLngs(candidate, projection, ALG_B_SEARCH_CONFIG.ellipseSamples),
+    latlngs: result.projectionType === 'mercator'
+      ? buildMercatorEllipseLatLngs(candidate, ALG_B_SEARCH_CONFIG.ellipseSamples)
+      : buildEllipseCandidateLatLngs(candidate, projection, ALG_B_SEARCH_CONFIG.ellipseSamples),
     style,
     label: style.label,
     metrics: result.metrics || null,
+  };
+}
+
+function buildRawDegreeEllipseLatLngs(candidate, sampleCount = 180) {
+  const points = [];
+  const angleRad = candidate.angleDegrees * Math.PI / 180;
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  const semiX = candidate.widthDegrees / 2;
+  const semiY = candidate.heightDegrees / 2;
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const theta = (Math.PI * 2 * index) / sampleCount;
+    const u = Math.cos(theta) * semiX;
+    const v = Math.sin(theta) * semiY;
+    const lng = candidate.centerLng + u * cos - v * sin;
+    const lat = candidate.centerLat + u * sin + v * cos;
+    points.push({ lat, lng });
+  }
+
+  return points;
+}
+
+function measureRawDegreeEllipseAxesMeters(candidate) {
+  const center = { lat: candidate.centerLat, lng: candidate.centerLng };
+  const projection = buildProjection([center]);
+  const angleRad = candidate.angleDegrees * Math.PI / 180;
+  const cos = Math.cos(angleRad);
+  const sin = Math.sin(angleRad);
+  const semiX = candidate.widthDegrees / 2;
+  const semiY = candidate.heightDegrees / 2;
+  const majorEnd = projection.project({
+    lng: candidate.centerLng + semiX * cos,
+    lat: candidate.centerLat + semiX * sin,
+  });
+  const minorEnd = projection.project({
+    lng: candidate.centerLng - semiY * sin,
+    lat: candidate.centerLat + semiY * cos,
+  });
+  const centerProjected = projection.project(center);
+
+  const widthSemiMeters = Math.hypot(majorEnd.x - centerProjected.x, majorEnd.y - centerProjected.y);
+  const heightSemiMeters = Math.hypot(minorEnd.x - centerProjected.x, minorEnd.y - centerProjected.y);
+
+  if (widthSemiMeters >= heightSemiMeters) {
+    return {
+      semiMajorMeters: widthSemiMeters,
+      semiMinorMeters: heightSemiMeters,
+      angleDeg: (candidate.angleDegrees + 360) % 360,
+    };
+  }
+
+  return {
+    semiMajorMeters: heightSemiMeters,
+    semiMinorMeters: widthSemiMeters,
+    angleDeg: (candidate.angleDegrees + 90 + 360) % 360,
   };
 }
 
@@ -181,6 +262,15 @@ function buildMetricLines(geometry) {
   if (geometry.label === 'Alg-B' && geometry.metrics) {
     lines.push(`inside=${geometry.metrics.insideCount}`);
     lines.push(`outside=${geometry.metrics.outsideCount}`);
+  }
+
+  if (geometry.label === 'Alg-C' && geometry.metrics) {
+    lines.push(`clustered=${geometry.metrics.clusteredCount}`);
+    lines.push(`boundary=${geometry.metrics.boundaryCount}`);
+    lines.push(`coastRejected=${geometry.metrics.coastRejectedCount}`);
+    if (Number.isFinite(geometry.metrics.minCoastDistanceMeters)) {
+      lines.push(`minCoastDist=${Math.round(geometry.metrics.minCoastDistanceMeters)}m`);
+    }
   }
 
   return lines;
@@ -248,6 +338,13 @@ function buildHtml(payload) {
       margin: 10px 0;
       font-size: 14px;
     }
+    .legend-toggle {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--ink);
+      flex: 0 0 auto;
+    }
     .swatch {
       width: 34px;
       height: 12px;
@@ -277,11 +374,12 @@ function buildHtml(payload) {
   <div class="layout">
     <aside class="sidebar">
       <h1>${escapeHtml(title)}</h1>
-      <p>Comparison map for <code>alg-basic</code>, <code>alg-A</code>, and <code>alg-B</code>, built from a JSON file of alerted settlement names.</p>
+      <p>Comparison map for <code>alg-basic</code>, <code>alg-A</code>, <code>alg-B</code>, and <code>alg-C</code>, built from a JSON file of alerted settlement names.</p>
       <div class="meta">Input: ${escapeHtml(path.basename(payload.inputPath))}</div>
       <div class="meta">Alerted settlements: ${payload.alertedPoints.length}</div>
       ${payload.geometries.map((geometry) => `
         <div class="legend-item">
+          <input class="legend-toggle" type="checkbox" data-geometry-label="${escapeHtml(geometry.label)}" checked>
           <span class="swatch" style="background:${geometry.style.color}; border-color:${geometry.style.color}"></span>
           <span>${escapeHtml(buildSummary(geometry))}</span>
         </div>
@@ -305,6 +403,7 @@ function buildHtml(payload) {
     (function() {
       const payload = window.__ELLIPSE_COMPARE__;
       const map = L.map('map', { zoomControl: true, preferCanvas: true });
+      const geometryLayersByLabel = new Map();
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 18,
@@ -313,26 +412,34 @@ function buildHtml(payload) {
 
       map.fitBounds(L.latLngBounds(payload.bounds.southWest, payload.bounds.northEast).pad(0.08));
 
-      for (const geometry of payload.geometries) {
+      const geometries = payload.geometries.slice().sort((a, b) => {
+        if (a.label === 'alg-basic' && b.label !== 'alg-basic') return 1;
+        if (b.label === 'alg-basic' && a.label !== 'alg-basic') return -1;
+        return 0;
+      });
+
+      for (const geometry of geometries) {
         const popup = [geometry.label, ...geometry.metricLines].join('<br>');
+        const weight = geometry.style.weight || 4;
+        const layerGroup = L.layerGroup();
 
         if (geometry.type === 'circle') {
           L.circle([geometry.center.lat, geometry.center.lng], {
             radius: geometry.radiusMeters,
             color: geometry.style.color,
-            weight: 4,
+            weight,
             opacity: 0.95,
             fillColor: geometry.style.color,
             fillOpacity: geometry.style.fillOpacity
-          }).addTo(map).bindPopup(popup);
+          }).addTo(layerGroup).bindPopup(popup);
         } else {
           L.polygon(geometry.latlngs, {
             color: geometry.style.color,
-            weight: 4,
+            weight,
             opacity: 0.95,
             fillColor: geometry.style.color,
             fillOpacity: geometry.style.fillOpacity
-          }).addTo(map).bindPopup(popup);
+          }).addTo(layerGroup).bindPopup(popup);
         }
 
         L.circleMarker([geometry.center.lat, geometry.center.lng], {
@@ -341,7 +448,22 @@ function buildHtml(payload) {
           weight: 2,
           fillColor: '#fff',
           fillOpacity: 1
-        }).addTo(map).bindPopup(geometry.label + ' center');
+        }).addTo(layerGroup).bindPopup(geometry.label + ' center');
+
+        layerGroup.addTo(map);
+        geometryLayersByLabel.set(geometry.label, layerGroup);
+      }
+
+      for (const checkbox of document.querySelectorAll('[data-geometry-label]')) {
+        checkbox.addEventListener('change', () => {
+          const layerGroup = geometryLayersByLabel.get(checkbox.dataset.geometryLabel);
+          if (!layerGroup) return;
+          if (checkbox.checked) {
+            layerGroup.addTo(map);
+          } else {
+            layerGroup.remove();
+          }
+        });
       }
 
       for (const point of payload.alertedPoints) {
@@ -365,7 +487,7 @@ function makeOutputPath(inputPath, explicitOutputPath) {
   return path.join(parsed.dir, parsed.name + '.ellipse-comparison.html');
 }
 
-function main() {
+async function main() {
   const inputPathArg = process.argv[2];
   const outputPathArg = process.argv[3];
 
@@ -384,13 +506,16 @@ function main() {
   const projection = buildProjection(alertedPoints);
 
   const basicGeometry = buildEllipseGeometry(alertedPoints);
+  basicGeometry.projectionType = 'mercator';
   const algAFit = fitEllipse(alertedPoints, allEntries, ALG_A_DEFAULT_OPTIONS);
   const algBFit = fitFixedLeftmostEllipse(alertedPoints);
+  const algCFit = await fitAlgC(alertedPoints);
 
   const styles = [
-    { label: 'alg-basic', color: '#8e1b1b', fillOpacity: 0.05 },
+    { label: 'alg-basic', color: '#8e1b1b', fillOpacity: 0.05, weight: 8 },
     { label: 'Alg-A', color: '#1b5e20', fillOpacity: 0.05 },
     { label: 'Alg-B', color: '#1839b7', fillOpacity: 0.04 },
+    { label: 'Alg-C', color: '#8a3ffc', fillOpacity: 0.04 },
   ];
 
   const geometries = [
@@ -423,6 +548,12 @@ function main() {
         farthestOutside: algBFit.best.farthestOutside,
       },
     }, projection, styles[2]),
+    buildRenderableGeometry({
+      type: 'ellipse',
+      coordinateSpace: algCFit.candidate.coordinateSpace,
+      rawCandidate: algCFit.candidate,
+      metrics: algCFit.metrics,
+    }, projection, styles[3]),
   ].map((geometry) => ({
     ...geometry,
     metricLines: buildMetricLines(geometry),
@@ -456,4 +587,5 @@ function main() {
   }, null, 2));
 }
 
-main();
+await main();
+process.exit(0);
