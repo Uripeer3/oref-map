@@ -9,19 +9,22 @@ service = EllipseService()
 ALLOWED_ORIGINS = {
     "http://127.0.0.1:8788",
     "http://localhost:8788",
+    "https://oref-map.org",
+    "https://www.oref-map.org",
 }
 
 
 def build_cors_headers(request: web.Request) -> dict[str, str]:
     origin = request.headers.get("Origin", "")
-    allow_origin = origin if origin in ALLOWED_ORIGINS else "http://127.0.0.1:8788"
-    return {
-        "Access-Control-Allow-Origin": allow_origin,
+    headers = {
         "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
         "Access-Control-Max-Age": "86400",
         "Vary": "Origin",
     }
+    if origin in ALLOWED_ORIGINS:
+        headers["Access-Control-Allow-Origin"] = origin
+    return headers
 
 
 def json_response(request: web.Request, payload: dict, status: int = 200) -> web.Response:

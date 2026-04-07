@@ -18,7 +18,7 @@ Server endpoints:
 Example request:
 
 ```bash
-curl -X POST http://127.0.0.1:8080/ellipse \
+curl -X POST https://ellipses.oref-map.org/ellipse \
   -H 'Content-Type: application/json' \
   -d '{"locations":["אבו גוש","אבו נוור","אבו סנאן","אבו קרינאת","אבו תלול","אבו קרינאת והפזורה","אבו קרינאת","אבו תלול","אבו גוש","אבו נוור"]}'
 ```

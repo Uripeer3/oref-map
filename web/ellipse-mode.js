@@ -1821,7 +1821,7 @@
 
       var endpoint = typeof options.endpoint === 'string' && options.endpoint
         ? options.endpoint
-        : (window.ELLIPSE_SERVICE_URL || 'http://127.0.0.1:8080/ellipse');
+        : (window.ELLIPSE_SERVICE_URL || 'https://ellipses.oref-map.org/ellipse');
 
       var response = await fetch(endpoint, {
         method: 'POST',

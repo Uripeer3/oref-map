@@ -215,7 +215,7 @@ The browser entry point is:
 
 That helper now:
 
-- posts to `http://127.0.0.1:8080/ellipse` by default
+- posts to `https://ellipses.oref-map.org/ellipse` by default
 - accepts an override via `options.endpoint` or `window.ELLIPSE_SERVICE_URL`
 - builds a blue overlay from the returned ellipse
 
