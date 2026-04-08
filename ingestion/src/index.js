@@ -259,8 +259,10 @@ export default {
       );
       if (!resp.ok) {
         const body = await resp.text().catch(() => '');
+        const headers = Object.fromEntries(resp.headers.entries());
         console.error(`Error Fetch URL: ${env.HISTORY_PROXY_URL}/api2/alarms-history`);
         console.error(`FETCH failed: HTTP ${resp.status}: ${body.slice(0, 200)}`);
+        console.error(`Response headers: ${JSON.stringify(headers)}`);
         return;
       }
       const text = (await resp.text()).replace(/^\ufeff/, '');
