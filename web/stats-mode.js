@@ -7,21 +7,24 @@
 
     var statsBtn = document.getElementById('stats-btn');
     var statsBtnRow = document.getElementById('stats-btn-row');
+    var rangeWrap = document.getElementById('stats-range-wrap');
+    var rangeBtn = document.getElementById('stats-range-btn');
+    var rangePopover = document.getElementById('stats-range-popover');
     var fromInput = document.getElementById('stats-from-date');
     var toInput = document.getElementById('stats-to-date');
     var typeSelect = document.getElementById('stats-type-select');
-    var applyBtn = document.getElementById('stats-apply-btn');
-    var clearBtn = document.getElementById('stats-clear-btn');
     var summaryEl = document.getElementById('stats-summary');
     var resultsEl = document.getElementById('stats-results');
-    if (!statsBtn || !statsBtnRow || !fromInput || !toInput || !typeSelect || !applyBtn || !clearBtn || !summaryEl || !resultsEl) {
+    if (!statsBtn || !statsBtnRow || !rangeWrap || !rangeBtn || !rangePopover || !fromInput || !toInput || !typeSelect || !summaryEl || !resultsEl) {
       return;
     }
 
     var DATE_MIN = '2026-02-28';
+    var RESULTS_LIMIT = 50;
     var typesLoadToken = 0;
     var applyToken = 0;
     var histogramToken = 0;
+    var autoRunTimer = null;
     var statsOverlay = null;
     var currentQuery = null;
 
@@ -50,10 +53,17 @@
       summaryEl.textContent = text || '';
     }
 
-    function setLoading(btn, loading) {
-      btn.disabled = !!loading;
-      btn.style.opacity = loading ? '0.65' : '';
-      btn.style.cursor = loading ? 'default' : 'pointer';
+    function setControlsBusy(busy) {
+      var isBusy = !!busy;
+      rangeBtn.disabled = isBusy;
+      typeSelect.disabled = isBusy;
+      rangeBtn.style.opacity = isBusy ? '0.7' : '';
+      rangeBtn.style.cursor = isBusy ? 'default' : 'pointer';
+    }
+
+    function setRangePopoverOpen(open) {
+      rangePopover.hidden = !open;
+      rangeBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
     function normalizeDateRange() {
@@ -78,8 +88,28 @@
       };
     }
 
+    function updateRangeButtonLabel() {
+      var range = normalizeDateRange();
+      rangeBtn.textContent =
+        'טווח: ' + range.from + ' - ' + range.to;
+    }
+
+    function queueAutoRun() {
+      if (!statsBtn.classList.contains('open')) return;
+      if (autoRunTimer) clearTimeout(autoRunTimer);
+      autoRunTimer = setTimeout(function() {
+        autoRunTimer = null;
+        runStats();
+      }, 180);
+    }
+
     function closePanel() {
       statsBtn.classList.remove('open');
+      setRangePopoverOpen(false);
+      if (autoRunTimer) {
+        clearTimeout(autoRunTimer);
+        autoRunTimer = null;
+      }
       clearOverlay();
       A.map.closePopup();
       if (typeof A.refreshOverlay === 'function') A.refreshOverlay();
@@ -91,8 +121,9 @@
       }
       A.map.closePopup();
       statsBtn.classList.add('open');
+      setRangePopoverOpen(false);
       if (typeof A.refreshOverlay === 'function') A.refreshOverlay();
-      loadAlertTypes();
+      loadAlertTypes({ autoRun: true });
     }
 
     function fetchJson(url) {
@@ -112,12 +143,14 @@
       });
     }
 
-    function clearOverlay() {
+    function clearOverlay(keepQuery) {
       if (statsOverlay) {
         A.map.removeLayer(statsOverlay);
         statsOverlay = null;
       }
-      currentQuery = null;
+      if (!keepQuery) {
+        currentQuery = null;
+      }
       histogramToken++;
     }
 
@@ -129,11 +162,11 @@
 
     function buildResults(counts) {
       if (!counts || counts.length === 0) {
-        resultsEl.innerHTML = '<div style="padding:10px;color:#64748b;font-size:12px;">\u05d0\u05d9\u05df \u05e0\u05ea\u05d5\u05e0\u05d9\u05dd \u05dc\u05d8\u05d5\u05d5\u05d7 \u05e9\u05e0\u05d1\u05d7\u05e8.</div>';
+        resultsEl.innerHTML = '<div style="padding:10px;color:#64748b;font-size:12px;">אין נתונים לטווח שנבחר.</div>';
         return;
       }
 
-      var rows = counts.slice(0, 200).map(function(item, idx) {
+      var rows = counts.slice(0, RESULTS_LIMIT).map(function(item, idx) {
         return (
           '<div class="stats-result-row" data-loc="' + escapeHtml(item.polygon) + '">' +
             '<span class="stats-result-index">' + (idx + 1) + '.</span>' +
@@ -143,8 +176,8 @@
         );
       }).join('');
 
-      if (counts.length > 200) {
-        rows += '<div style="padding:8px;color:#64748b;font-size:12px;">\u05de\u05d5\u05e6\u05d2\u05d9\u05dd 200 \u05e8\u05d0\u05e9\u05d5\u05e0\u05d9\u05dd \u05de\u05ea\u05d5\u05da ' + counts.length + '.</div>';
+      if (counts.length > RESULTS_LIMIT) {
+        rows += '<div style="padding:8px;color:#64748b;font-size:12px;">מוצגים ' + RESULTS_LIMIT + ' ראשונים מתוך ' + counts.length + '.</div>';
       }
 
       resultsEl.innerHTML = rows;
@@ -155,7 +188,7 @@
 
       var allOpt = document.createElement('option');
       allOpt.value = '';
-      allOpt.textContent = '\u05d4\u05db\u05dc';
+      allOpt.textContent = 'כל סוגי ההתרעות';
       typeSelect.appendChild(allOpt);
 
       for (var i = 0; i < titles.length; i++) {
@@ -172,30 +205,31 @@
       }
     }
 
-    function loadAlertTypes() {
+    function loadAlertTypes(options) {
+      var autoRun = !!(options && options.autoRun);
       var range = normalizeDateRange();
       var token = ++typesLoadToken;
       var previousValue = typeSelect.value;
-      setLoading(applyBtn, true);
-      typeSelect.disabled = true;
-      setSummary('\u05d8\u05d5\u05e2\u05df \u05e1\u05d5\u05d2\u05d9 \u05d4\u05ea\u05e8\u05e2\u05d4...', false);
+      updateRangeButtonLabel();
+      setControlsBusy(true);
+      setSummary('טוען סוגי התרעה...', false);
 
       fetchJson('/api/alert-types?from=' + encodeURIComponent(range.from) + '&to=' + encodeURIComponent(range.to))
         .then(function(data) {
           if (token !== typesLoadToken) return;
           var titles = (data.types || []).map(function(row) { return row.title; });
           rebuildTypeOptions(titles, previousValue);
-          setSummary('\u05d6\u05d5\u05d4\u05d5 ' + titles.length + ' \u05e1\u05d5\u05d2\u05d9 \u05d4\u05ea\u05e8\u05e2\u05d4 \u05d1\u05d8\u05d5\u05d5\u05d7 \u05d4\u05e0\u05d1\u05d7\u05e8.', false);
+          setSummary('זוהו ' + titles.length + ' סוגי התרעה בטווח הנבחר.', false);
         })
         .catch(function(error) {
           if (token !== typesLoadToken) return;
           rebuildTypeOptions([], '');
-          setSummary(error.message || '\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d8\u05e2\u05d9\u05e0\u05ea \u05e1\u05d5\u05d2\u05d9 \u05d4\u05ea\u05e8\u05e2\u05d4.', true);
+          setSummary(error.message || 'שגיאה בטעינת סוגי התרעה.', true);
         })
         .finally(function() {
           if (token !== typesLoadToken) return;
-          typeSelect.disabled = false;
-          setLoading(applyBtn, false);
+          setControlsBusy(false);
+          if (autoRun) queueAutoRun();
         });
     }
 
@@ -231,7 +265,7 @@
       }
 
       var minuteHistogramHtml =
-        '<div style="margin-top:10px;font-size:12px;color:#333;">\u05e4\u05d9\u05dc\u05d5\u05d7 \u05d4\u05ea\u05e8\u05e2\u05d5\u05ea \u05dc\u05e4\u05d9 \u05d3\u05e7\u05d4 \u05d1\u05e9\u05e2\u05d4 (00-59)</div>' +
+        '<div style="margin-top:10px;font-size:12px;color:#333;">פילוח התרעות לפי דקה בשעה (00-59)</div>' +
         '<div style="margin-top:4px;border:1px solid #e5e7eb;border-radius:6px;padding:6px;">' +
           '<div style="display:grid;grid-template-columns:repeat(60,minmax(0,1fr));column-gap:1px;align-items:end;height:36px;direction:ltr;">' + minuteBars + '</div>' +
           '<div style="display:flex;justify-content:space-between;font-size:10px;color:#666;direction:ltr;margin-top:4px;">' +
@@ -239,15 +273,15 @@
           '</div>' +
         '</div>';
 
-      var selectedTypeLabel = selectedType || '\u05d4\u05db\u05dc';
+      var selectedTypeLabel = selectedType || 'הכל';
       var bodyHtml = total === 0
-        ? '<div style="margin-top:8px;font-size:12px;color:#888;">\u05d0\u05d9\u05df \u05d4\u05ea\u05e8\u05e2\u05d5\u05ea \u05dc\u05d9\u05d9\u05e9\u05d5\u05d1 \u05d1\u05d8\u05d5\u05d5\u05d7 \u05e9\u05e0\u05d1\u05d7\u05e8.</div>'
-        : '<div style="margin-top:8px;font-size:12px;color:#333;">\u05e4\u05d9\u05dc\u05d5\u05d7 \u05d4\u05ea\u05e8\u05e2\u05d5\u05ea \u05dc\u05e4\u05d9 \u05e9\u05e2\u05d4</div><div style="margin-top:4px;">' + hourRows + '</div>' + minuteHistogramHtml;
+        ? '<div style="margin-top:8px;font-size:12px;color:#888;">אין התרעות ליישוב בטווח שנבחר.</div>'
+        : '<div style="margin-top:8px;font-size:12px;color:#333;">פילוח התרעות לפי שעה</div><div style="margin-top:4px;">' + hourRows + '</div>' + minuteHistogramHtml;
 
       return '<div style="direction:rtl;width:min(430px,88vw);text-align:right;">' +
         '<b>' + escapeHtml(locationName) + '</b>' +
-        '<div style="margin-top:4px;font-size:12px;color:#555;">\u05e1\u05d5\u05d2 \u05d4\u05ea\u05e8\u05e2\u05d4: ' + escapeHtml(selectedTypeLabel) + '</div>' +
-        '<div style="margin-top:4px;font-size:13px;color:#111;font-weight:bold;">\u05e1\u05d4\u05f4\u05db \u05d4\u05ea\u05e8\u05e2\u05d5\u05ea: ' + total + '</div>' +
+        '<div style="margin-top:4px;font-size:12px;color:#555;">סוג התרעה: ' + escapeHtml(selectedTypeLabel) + '</div>' +
+        '<div style="margin-top:4px;font-size:13px;color:#111;font-weight:bold;">סה״כ התרעות: ' + total + '</div>' +
         bodyHtml +
       '</div>';
     }
@@ -257,7 +291,7 @@
       var selectedType = currentQuery.type || '';
       var popup = L.popup({ maxWidth: 460 })
         .setLatLng(latlng)
-        .setContent('<div style="direction:rtl;text-align:right;padding:4px 0;">\u05d8\u05d5\u05e2\u05df \u05e4\u05d9\u05dc\u05d5\u05d7 \u05d1\u05e9\u05d1\u05d9\u05dc ' + escapeHtml(locationName) + '...</div>')
+        .setContent('<div style="direction:rtl;text-align:right;padding:4px 0;">טוען פילוח בשביל ' + escapeHtml(locationName) + '...</div>')
         .openOn(A.map);
 
       var token = ++histogramToken;
@@ -273,12 +307,12 @@
         })
         .catch(function(error) {
           if (token !== histogramToken) return;
-          popup.setContent('<div style="direction:rtl;text-align:right;color:#b91c1c;">' + escapeHtml(error.message || '\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d8\u05e2\u05d9\u05e0\u05ea \u05e0\u05ea\u05d5\u05e0\u05d9 \u05e4\u05d9\u05dc\u05d5\u05d7.') + '</div>');
+          popup.setContent('<div style="direction:rtl;text-align:right;color:#b91c1c;">' + escapeHtml(error.message || 'שגיאה בטעינת נתוני פילוח.') + '</div>');
         });
     }
 
     function applyOverlay(counts) {
-      clearOverlay();
+      clearOverlay(true);
       if (!counts || counts.length === 0) return;
 
       var maxCount = 0;
@@ -306,7 +340,7 @@
           interactive: true,
           bubblingMouseEvents: false,
         });
-        overlayPoly.bindTooltip('<b>' + escapeHtml(item.polygon) + '</b><br>\u05d4\u05ea\u05e8\u05e2\u05d5\u05ea: ' + item.count, {
+        overlayPoly.bindTooltip('<b>' + escapeHtml(item.polygon) + '</b><br>התרעות: ' + item.count, {
           direction: 'top',
           offset: [0, -20],
         });
@@ -322,7 +356,9 @@
     }
 
     function runStats() {
+      if (!statsBtn.classList.contains('open')) return;
       var range = normalizeDateRange();
+      updateRangeButtonLabel();
       var token = ++applyToken;
       currentQuery = {
         from: range.from,
@@ -330,8 +366,8 @@
         type: typeSelect.value || '',
       };
 
-      setLoading(applyBtn, true);
-      setSummary('\u05d8\u05d5\u05e2\u05df \u05e1\u05d8\u05d8\u05d9\u05e1\u05d8\u05d9\u05e7\u05d4...', false);
+      setControlsBusy(true);
+      setSummary('טוען סטטיסטיקה...', false);
       A.map.closePopup();
 
       var countsUrl = '/api/polygon-counts?from=' + encodeURIComponent(range.from) + '&to=' + encodeURIComponent(range.to);
@@ -342,24 +378,23 @@
       fetchJson(countsUrl)
         .then(function(data) {
           if (token !== applyToken) return;
-          var typeLabel = currentQuery.type || '\u05d4\u05db\u05dc';
+          var typeLabel = currentQuery.type || 'הכל';
           setSummary(
-            '\u05e0\u05de\u05e6\u05d0\u05d5 ' + data.totalAlerts + ' \u05d4\u05ea\u05e8\u05e2\u05d5\u05ea \u05d1-' +
-            data.uniquePolygons + ' \u05e4\u05d5\u05dc\u05d9\u05d2\u05d5\u05e0\u05d9\u05dd (\u05e1\u05d5\u05d2: ' + typeLabel + ').'
+            'נמצאו ' + data.totalAlerts + ' התרעות ב-' +
+            data.uniquePolygons + ' פוליגונים (סוג: ' + typeLabel + ').'
           );
           buildResults(data.counts || []);
           applyOverlay(data.counts || []);
-          A.showToast('\u05de\u05e6\u05d1 \u05e1\u05d8\u05d8\u05d9\u05e1\u05d8\u05d9\u05e7\u05d4 \u05e4\u05e2\u05d9\u05dc');
         })
         .catch(function(error) {
           if (token !== applyToken) return;
           clearOverlay();
           resultsEl.innerHTML = '';
-          setSummary(error.message || '\u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05d8\u05e2\u05d9\u05e0\u05ea \u05e1\u05d8\u05d8\u05d9\u05e1\u05d8\u05d9\u05e7\u05d4.', true);
+          setSummary(error.message || 'שגיאה בטעינת סטטיסטיקה.', true);
         })
         .finally(function() {
           if (token !== applyToken) return;
-          setLoading(applyBtn, false);
+          setControlsBusy(false);
         });
     }
 
@@ -372,20 +407,22 @@
       openPanel();
     });
 
-    fromInput.addEventListener('change', loadAlertTypes);
-    toInput.addEventListener('change', loadAlertTypes);
-
-    applyBtn.addEventListener('click', function(e) {
+    rangeBtn.addEventListener('click', function(e) {
       e.preventDefault();
-      runStats();
+      if (!statsBtn.classList.contains('open')) return;
+      setRangePopoverOpen(rangePopover.hidden);
     });
 
-    clearBtn.addEventListener('click', function(e) {
-      e.preventDefault();
-      clearOverlay();
-      resultsEl.innerHTML = '<div style="padding:10px;color:#64748b;font-size:12px;">\u05d1\u05d7\u05e8\u05d5 \u05d8\u05d5\u05d5\u05d7 \u05ea\u05d0\u05e8\u05d9\u05db\u05d9\u05dd \u05d5\u05e1\u05d5\u05d2 \u05d4\u05ea\u05e8\u05e2\u05d4, \u05d5\u05dc\u05d7\u05e6\u05d5 \u05d4\u05e6\u05d2 \u05e2\u05dc \u05d4\u05de\u05e4\u05d4.</div>';
-      setSummary('\u05de\u05e6\u05d1 \u05e1\u05d8\u05d8\u05d9\u05e1\u05d8\u05d9\u05e7\u05d4 \u05e0\u05d5\u05e7\u05d4.', false);
-      A.showToast('\u05d7\u05d6\u05e8\u05d4 \u05dc\u05ea\u05e6\u05d5\u05d2\u05d4 \u05d7\u05d9\u05d4');
+    fromInput.addEventListener('change', function() {
+      updateRangeButtonLabel();
+      loadAlertTypes({ autoRun: true });
+    });
+    toInput.addEventListener('change', function() {
+      updateRangeButtonLabel();
+      loadAlertTypes({ autoRun: true });
+    });
+    typeSelect.addEventListener('change', function() {
+      queueAutoRun();
     });
 
     resultsEl.addEventListener('click', function(e) {
@@ -399,6 +436,13 @@
       showHistogramPopup(name, center);
     });
 
+    document.addEventListener('click', function(e) {
+      if (rangePopover.hidden) return;
+      if (!rangeWrap.contains(e.target)) {
+        setRangePopoverOpen(false);
+      }
+    });
+
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape' && statsBtn.classList.contains('open')) {
         closePanel();
@@ -408,7 +452,9 @@
     window.closeStatsModePanel = closePanel;
 
     normalizeDateRange();
-    resultsEl.innerHTML = '<div style="padding:10px;color:#64748b;font-size:12px;">\u05d1\u05d7\u05e8\u05d5 \u05d8\u05d5\u05d5\u05d7 \u05ea\u05d0\u05e8\u05d9\u05db\u05d9\u05dd \u05d5\u05e1\u05d5\u05d2 \u05d4\u05ea\u05e8\u05e2\u05d4, \u05d5\u05dc\u05d7\u05e6\u05d5 \u05d4\u05e6\u05d2 \u05e2\u05dc \u05d4\u05de\u05e4\u05d4.</div>';
+    updateRangeButtonLabel();
+    setRangePopoverOpen(false);
+    resultsEl.innerHTML = '<div style="padding:10px;color:#64748b;font-size:12px;">בחרו טווח תאריכים וסוג התרעה להצגה אוטומטית.</div>';
   }
 
   if (window.AppState) {
