@@ -33,6 +33,8 @@ export async function onRequestGet(context) {
     );
   }
   const stateFilter = stateFilterResult.set;
+  const effectiveIncludeGreen =
+    includeGreen || (stateFilter ? stateFilter.has('green') : false);
 
   const todayIsrael = getTodayIsrael();
   if (dateRange.toDate > todayIsrael) {
@@ -48,7 +50,7 @@ export async function onRequestGet(context) {
     const collected = await collectAlertsForRange(context, {
       fromDate: dateRange.fromDate,
       toDate: dateRange.toDate,
-      includeGreen,
+      includeGreen: effectiveIncludeGreen,
       typeFilter,
       stateFilter,
       origin: url.origin,
@@ -95,7 +97,7 @@ export async function onRequestGet(context) {
       polygon,
       from: dateRange.fromDate,
       to: dateRange.toDate,
-      includeGreen,
+      includeGreen: effectiveIncludeGreen,
       filters: {
         types: typeFilter ? Array.from(typeFilter) : [],
         states: stateFilter ? Array.from(stateFilter) : [],

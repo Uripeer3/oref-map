@@ -130,17 +130,23 @@ function parseJsonl(text) {
   return out;
 }
 
+function normalizeLocationName(rawLocation) {
+  return String(rawLocation || '')
+    .trim()
+    .replace(/״/g, "''")
+    .replace(/׳/g, "'");
+}
+
 function normalizeHistoryEntry(entry) {
   const alertDate = normalizeAlertDate(entry.alertDate);
-  const location = String(entry.data || entry.location || '').trim();
+  const location = normalizeLocationName(entry.data || entry.location);
   const title = normalizeTitle(entry.category_desc || entry.title);
 
   if (!alertDate || !location || !title) return null;
 
-  const ridKey =
-    entry.rid !== undefined && entry.rid !== null && entry.rid !== ''
-      ? String(entry.rid)
-      : `${alertDate}|${location}|${title}`;
+  const hasRid =
+    entry.rid !== undefined && entry.rid !== null && entry.rid !== '';
+  const ridKey = hasRid ? String(entry.rid) : `${alertDate}|${location}|${title}`;
 
   return {
     alertDate,
@@ -148,6 +154,7 @@ function normalizeHistoryEntry(entry) {
     title,
     state: String(entry.state || classifyTitle(title)),
     ridKey,
+    hasRid,
   };
 }
 
@@ -294,6 +301,8 @@ export async function collectAlertsForRange(context, options) {
 
   const entries = [];
   const seenRid = new Set();
+  const seenSemanticWithRid = new Set();
+  const seenSemanticWithoutRid = new Set();
   let scannedEntries = 0;
 
   function accumulate(rawEntry) {
@@ -301,8 +310,19 @@ export async function collectAlertsForRange(context, options) {
     const entry = normalizeHistoryEntry(rawEntry);
     if (!entry) return;
     if (entry.alertDate < rangeStart || entry.alertDate > rangeEnd) return;
-    if (seenRid.has(entry.ridKey)) return;
-    seenRid.add(entry.ridKey);
+    const semanticKey = `${entry.alertDate}|${entry.location}|${entry.title}`;
+
+    if (entry.hasRid) {
+      if (seenRid.has(entry.ridKey)) return;
+      seenRid.add(entry.ridKey);
+      seenSemanticWithRid.add(semanticKey);
+    } else {
+      // /api2/history entries usually lack rid; dedupe them both among themselves
+      // and against rid-backed rows already collected from SQL/R2.
+      if (seenSemanticWithoutRid.has(semanticKey)) return;
+      if (seenSemanticWithRid.has(semanticKey)) return;
+      seenSemanticWithoutRid.add(semanticKey);
+    }
 
     if (!includeGreen && entry.state === 'green') return;
     if (typeFilter && !typeFilter.has(entry.title)) return;
