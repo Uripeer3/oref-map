@@ -37,6 +37,7 @@ Requires [Node.js](https://nodejs.org) and `npx` (comes with npm). Uses [Wrangle
 The polygon data file (`locations_polygons.json`) is not in the repo — `./web-dev` downloads it automatically from the live site if missing.
 
 Hybrid stats storage (R2 + D1) setup and backfill steps are documented in `docs/stats-sql.md`.
+Full local setup (Windows/PowerShell, D1 + R2 + backfill scripts) is documented in `docs/local-dev-from-scratch.md`.
 
 ## Deploy
 
