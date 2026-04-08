@@ -36,30 +36,30 @@ def classify_title(title: str) -> str:
     t = normalize_title(title)
 
     if (
-        "\u05d4\u05d0\u05d9\u05e8\u05d5\u05e2 \u05d4\u05e1\u05ea\u05d9\u05d9\u05dd" in t
+        "האירוע הסתיים" in t
         or (
-            "\u05e0\u05d9\u05ea\u05df \u05dc\u05e6\u05d0\u05ea" in t
-            and "\u05dc\u05d4\u05d9\u05e9\u05d0\u05e8 \u05d1\u05e7\u05e8\u05d1\u05ea\u05d5" not in t
+            "ניתן לצאת" in t
+            and "להישאר בקרבתו" not in t
         )
-        or "\u05d4\u05d7\u05e9\u05e9 \u05d4\u05d5\u05e1\u05e8" in t
-        or "\u05d9\u05db\u05d5\u05dc\u05d9\u05dd \u05dc\u05e6\u05d0\u05ea" in t
-        or "\u05d0\u05d9\u05e0\u05dd \u05e6\u05e8\u05d9\u05db\u05d9\u05dd \u05dc\u05e9\u05d4\u05d5\u05ea" in t
-        or "\u05e1\u05d9\u05d5\u05dd \u05e9\u05d4\u05d9\u05d9\u05d4 \u05d1\u05e1\u05de\u05d9\u05db\u05d5\u05ea" in t
-        or t == "\u05e2\u05d3\u05db\u05d5\u05df"
+        or "החשש הוסר" in t
+        or "יכולים לצאת" in t
+        or "אינם צריכים לשהות" in t
+        or "סיום שהייה בסמיכות" in t
+        or t == "עדכון"
     ):
         return "green"
 
     if (
         t
-        == "\u05d1\u05d3\u05e7\u05d5\u05ea \u05d4\u05e7\u05e8\u05d5\u05d1\u05d5\u05ea \u05e6\u05e4\u05d5\u05d9\u05d5\u05ea \u05dc\u05d4\u05ea\u05e7\u05d1\u05dc \u05d4\u05ea\u05e8\u05e2\u05d5\u05ea \u05d1\u05d0\u05d6\u05d5\u05e8\u05da"
-        or "\u05dc\u05e9\u05e4\u05e8 \u05d0\u05ea \u05d4\u05de\u05d9\u05e7\u05d5\u05dd \u05dc\u05de\u05d9\u05d2\u05d5\u05df \u05d4\u05de\u05d9\u05d8\u05d1\u05d9"
+        == "בדקות הקרובות צפויות להתקבל התרעות באזורך"
+        or "לשפר את המיקום למיגון המיטבי"
         in t
-        or t == "\u05d9\u05e9 \u05dc\u05e9\u05d4\u05d5\u05ea \u05d1\u05e1\u05de\u05d9\u05db\u05d5\u05ea \u05dc\u05de\u05e8\u05d7\u05d1 \u05d4\u05de\u05d5\u05d2\u05df"
-        or "\u05dc\u05d4\u05d9\u05e9\u05d0\u05e8 \u05d1\u05e7\u05e8\u05d1\u05ea\u05d5" in t
+        or t == "יש לשהות בסמיכות למרחב המוגן"
+        or "להישאר בקרבתו" in t
     ):
         return "yellow"
 
-    if t == "\u05d7\u05d3\u05d9\u05e8\u05ea \u05db\u05dc\u05d9 \u05d8\u05d9\u05e1 \u05e2\u05d5\u05d9\u05df":
+    if t == "חדירת כלי טיס עוין":
         return "purple"
 
     return "red"

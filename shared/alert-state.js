@@ -9,29 +9,29 @@ export function classifyTitle(title) {
   const t = normalizeTitle(title);
 
   if (
-    t.includes('\u05d4\u05d0\u05d9\u05e8\u05d5\u05e2 \u05d4\u05e1\u05ea\u05d9\u05d9\u05dd') ||
-    (t.includes('\u05e0\u05d9\u05ea\u05df \u05dc\u05e6\u05d0\u05ea') &&
-      !t.includes('\u05dc\u05d4\u05d9\u05e9\u05d0\u05e8 \u05d1\u05e7\u05e8\u05d1\u05ea\u05d5')) ||
-    t.includes('\u05d4\u05d7\u05e9\u05e9 \u05d4\u05d5\u05e1\u05e8') ||
-    t.includes('\u05d9\u05db\u05d5\u05dc\u05d9\u05dd \u05dc\u05e6\u05d0\u05ea') ||
-    t.includes('\u05d0\u05d9\u05e0\u05dd \u05e6\u05e8\u05d9\u05db\u05d9\u05dd \u05dc\u05e9\u05d4\u05d5\u05ea') ||
-    t.includes('\u05e1\u05d9\u05d5\u05dd \u05e9\u05d4\u05d9\u05d9\u05d4 \u05d1\u05e1\u05de\u05d9\u05db\u05d5\u05ea') ||
-    t === '\u05e2\u05d3\u05db\u05d5\u05df'
+    t.includes('האירוע הסתיים') ||
+    (t.includes('ניתן לצאת') &&
+      !t.includes('להישאר בקרבתו')) ||
+    t.includes('החשש הוסר') ||
+    t.includes('יכולים לצאת') ||
+    t.includes('אינם צריכים לשהות') ||
+    t.includes('סיום שהייה בסמיכות') ||
+    t === 'עדכון'
   ) {
     return 'green';
   }
 
   if (
     t ===
-      '\u05d1\u05d3\u05e7\u05d5\u05ea \u05d4\u05e7\u05e8\u05d5\u05d1\u05d5\u05ea \u05e6\u05e4\u05d5\u05d9\u05d5\u05ea \u05dc\u05d4\u05ea\u05e7\u05d1\u05dc \u05d4\u05ea\u05e8\u05e2\u05d5\u05ea \u05d1\u05d0\u05d6\u05d5\u05e8\u05da' ||
-    t.includes('\u05dc\u05e9\u05e4\u05e8 \u05d0\u05ea \u05d4\u05de\u05d9\u05e7\u05d5\u05dd \u05dc\u05de\u05d9\u05d2\u05d5\u05df \u05d4\u05de\u05d9\u05d8\u05d1\u05d9') ||
-    t === '\u05d9\u05e9 \u05dc\u05e9\u05d4\u05d5\u05ea \u05d1\u05e1\u05de\u05d9\u05db\u05d5\u05ea \u05dc\u05de\u05e8\u05d7\u05d1 \u05d4\u05de\u05d5\u05d2\u05df' ||
-    t.includes('\u05dc\u05d4\u05d9\u05e9\u05d0\u05e8 \u05d1\u05e7\u05e8\u05d1\u05ea\u05d5')
+      'בדקות הקרובות צפויות להתקבל התרעות באזורך' ||
+    t.includes('לשפר את המיקום למיגון המיטבי') ||
+    t === 'יש לשהות בסמיכות למרחב המוגן' ||
+    t.includes('להישאר בקרבתו')
   ) {
     return 'yellow';
   }
 
-  if (t === '\u05d7\u05d3\u05d9\u05e8\u05ea \u05db\u05dc\u05d9 \u05d8\u05d9\u05e1 \u05e2\u05d5\u05d9\u05df') {
+  if (t === 'חדירת כלי טיס עוין') {
     return 'purple';
   }
 
